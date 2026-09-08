@@ -1,0 +1,128 @@
+{
+  "timestamp": "2026-09-06T22:07:04.067723",
+  "delta_rows": 5,
+  "pre_audit": {
+    "status": "HEALTHY",
+    "timestamp": "2026-09-07T02:06:47.209Z",
+    "sheetsStatus": {
+      "Wellness": {
+        "maxRows": 1037,
+        "firstEmptyRowColA": 39,
+        "activeRecords": 37
+      },
+      "Registro_Diario": {
+        "maxRows": 991,
+        "firstEmptyRowColA": 198,
+        "activeRecords": 196
+      },
+      "Nombre de Atletas": {
+        "maxRows": 1000,
+        "firstEmptyRowColA": 9,
+        "activeRecords": 7
+      },
+      "RM_Atletas": {
+        "maxRows": 1001,
+        "firstEmptyRowColA": 57,
+        "activeRecords": 55
+      },
+      "Log_Script": {
+        "maxRows": 1000,
+        "firstEmptyRowColA": 14,
+        "activeRecords": 12
+      }
+    },
+    "discrepancies": [],
+    "summary": "Ecosistema 100% íntegro. Sin saltos de fila. Fórmulas y Looker Studio sincronizados."
+  },
+  "results": [
+    {
+      "index": 5,
+      "athlete": "Ariannys Valero",
+      "exercise": "Deadlift (Sumo)",
+      "start_time": 1788746809.7809694,
+      "end_time": 1788746813.2115188,
+      "duration_sec": 3.431,
+      "status_code": 200,
+      "response": "{\"status\":\"success\",\"message\":\"Entrenamiento guardado en pestaña 'Registro_Diario' para Ariannys Valero\",\"timestamp\":\"2026-09-07T02:06:51.783Z\"}",
+      "error": null
+    },
+    {
+      "index": 1,
+      "athlete": "Asdrubal",
+      "exercise": "Snatch (High Hang)",
+      "start_time": 1788746809.783163,
+      "end_time": 1788746814.9516108,
+      "duration_sec": 5.168,
+      "status_code": 200,
+      "response": "{\"status\":\"success\",\"message\":\"Entrenamiento guardado en pestaña 'Registro_Diario' para Asdrubal\",\"timestamp\":\"2026-09-07T02:06:53.471Z\"}",
+      "error": null
+    },
+    {
+      "index": 3,
+      "athlete": "Shantal Vivas",
+      "exercise": "Power Clean",
+      "start_time": 1788746809.7822125,
+      "end_time": 1788746815.4656122,
+      "duration_sec": 5.683,
+      "status_code": 200,
+      "response": "{\"status\":\"success\",\"message\":\"Entrenamiento guardado en pestaña 'Registro_Diario' para Shantal Vivas\",\"timestamp\":\"2026-09-07T02:06:54.297Z\"}",
+      "error": null
+    },
+    {
+      "index": 2,
+      "athlete": "Andrea Flores",
+      "exercise": "Back Squat (Pausa)",
+      "start_time": 1788746809.7826385,
+      "end_time": 1788746816.2948825,
+      "duration_sec": 6.512,
+      "status_code": 200,
+      "response": "{\"status\":\"success\",\"message\":\"Entrenamiento guardado en pestaña 'Registro_Diario' para Andrea Flores\",\"timestamp\":\"2026-09-07T02:06:55.001Z\"}",
+      "error": null
+    },
+    {
+      "index": 4,
+      "athlete": "Elisbeth Menco",
+      "exercise": "Clean & Jerk",
+      "start_time": 1788746809.7813532,
+      "end_time": 1788746817.104789,
+      "duration_sec": 7.323,
+      "status_code": 200,
+      "response": "{\"status\":\"success\",\"message\":\"Entrenamiento guardado en pestaña 'Registro_Diario' para Elisbeth Menco\",\"timestamp\":\"2026-09-07T02:06:55.867Z\"}",
+      "error": null
+    }
+  ],
+  "post_audit": {
+    "status": "HEALTHY",
+    "timestamp": "2026-09-07T02:07:01.456Z",
+    "sheetsStatus": {
+      "Wellness": {
+        "maxRows": 1037,
+        "firstEmptyRowColA": 39,
+        "activeRecords": 37
+      },
+      "Registro_Diario": {
+        "maxRows": 991,
+        "firstEmptyRowColA": 203,
+        "activeRecords": 201
+      },
+      "Nombre de Atletas": {
+        "maxRows": 1000,
+        "firstEmptyRowColA": 9,
+        "activeRecords": 7
+      },
+      "RM_Atletas": {
+        "maxRows": 1001,
+        "firstEmptyRowColA": 57,
+        "activeRecords": 55
+      },
+      "Log_Script": {
+        "maxRows": 1000,
+        "firstEmptyRowColA": 20,
+        "activeRecords": 18
+      }
+    },
+    "discrepancies": [],
+    "summary": "Ecosistema 100% íntegro. Sin saltos de fila. Fórmulas y Looker Studio sincronizados."
+  },
+  "all_success": true
+}

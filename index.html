@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Plataforma Kleos | Rendimiento Atlético & Registro Diario</title>
+  <meta name="description" content="Plataforma Kleos: Captura de datos atléticos para Google Sheets y Looker Studio. Formulario de la Mañana (Wellness) y Registro Diario (WOD/Fuerza/Cardio con 1RM Epley).">
+  
+  <!-- Optimización Móvil & PWA para Atletas en Box y Casa -->
+  <meta name="theme-color" content="#06080c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Kleos">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="application-name" content="Plataforma Kleos">
+  <meta name="format-detection" content="telephone=no">
+
+  <!-- Open Graph para compartir por WhatsApp / Telegram con atletas -->
+  <meta property="og:title" content="Plataforma Kleos | Registro Atlético">
+  <meta property="og:description" content="Registra tu Wellness matutino y tus entrenamientos de WOD, Fuerza y Cardio directamente a la nube.">
+  <meta property="og:type" content="website">
+
+  <!-- Favicon e Icono de App (Emblema Griego Dorado) -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e6b422' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 6C5 9 5 13 8 16M17 6C19 9 19 13 16 16M12 3V21M9 4L12 2L15 4M8 10L12 8L16 10M8 17L12 15L16 17'/%3E%3C/svg%3E">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%2306080c'/%3E%3Cpath d='M30 30C20 45 20 65 35 80M70 30C80 45 80 65 65 80M50 15V85M35 20L50 10L65 20M30 50L50 40L70 50M30 75L50 65L70 75' stroke='%23e6b422' stroke-width='6' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E">
+
+  <!-- Tipografías de Google: Cinzel (Espíritu Griego Heroico) y Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="css/styles.css?v=2.1">
+</head>
+<body>
+  <!-- Fondo cinemático del Partenón con velo oscuro -->
+  <div class="background-overlay"></div>
+
+  <div class="app-container">
+    <!-- Header Principal con Identidad Griega -->
+    <header class="app-header">
+      <div class="brand-badge">
+        <svg class="greek-symbol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M7 6C5 9 5 13 8 16M17 6C19 9 19 13 16 16M12 3V21M9 4L12 2L15 4M8 10L12 8L16 10M8 17L12 15L16 17" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>ALTO RENDIMIENTO ATLÉTICO</span>
+      </div>
+      <h1 class="brand-title">K L E O S</h1>
+      <p class="brand-tagline">“La gloria eterna que se forja en cada entrenamiento”</p>
+
+      <!-- BARRA DE ATLETA DINÁMICA (Consumida de 'Nombre de Atletas') -->
+      <div class="athlete-bar glass-card">
+        <div class="athlete-input-group">
+          <label for="athleteSelect">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" fill="none" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+            Atleta:
+          </label>
+          <div class="select-wrapper">
+            <select id="athleteSelect" required>
+              <option value="" disabled selected>Cargando lista de atletas desde Sheets...</option>
+            </select>
+          </div>
+          <button type="button" id="btnRefreshAthletes" class="btn-icon-subtle" title="Sincronizar lista de atletas con Google Sheets">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="23 4 23 10 17 10"/>
+              <polyline points="1 20 1 14 7 14"/>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+          </button>
+        </div>
+
+        <button type="button" id="btnConfig" class="btn-icon" title="Configurar conexión Google Apps Script">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <span class="status-dot" id="statusDot" title="Estado de conexión"></span>
+        </button>
+      </div>
+    </header>
+
+    <!-- DOS SECCIONES VISUALMENTE INDEPENDIENTES: BOTONES GRANDES DE ACCESO -->
+    <nav class="sections-hub" role="tablist" aria-label="Secciones de Registro">
+      <!-- BOTÓN GRANDE 1: FORMULARIO DE LA MAÑANA (WELLNESS) -->
+      <button type="button" class="hub-card morning-card active" id="tabWellness" role="tab" aria-selected="true" aria-controls="panelWellness">
+        <div class="hub-header">
+          <div class="hub-icon-circle morning-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="5"/>
+              <line x1="12" y1="1" x2="12" y2="3"/>
+              <line x1="12" y1="21" x2="12" y2="23"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+              <line x1="1" y1="12" x2="3" y2="12"/>
+              <line x1="21" y1="12" x2="23" y2="12"/>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+          </div>
+          <span class="hub-tag morning-tag">☀️ REGISTRO MATUTINO</span>
+        </div>
+        <h2 class="hub-title">Formulario de la Mañana (Wellness)</h2>
+        <p class="hub-subtitle">Al despertar: Sueño, fatiga acumulada, RPE previo y molestias físicas.</p>
+        <div class="hub-footer">
+          <span class="hub-status" id="wellnessStatusBadge">Pendiente hoy</span>
+          <span class="hub-pill">Abrir formulario &rarr;</span>
+        </div>
+      </button>
+
+      <!-- BOTÓN GRANDE 2: REGISTRO POST-ENTRENAMIENTO (REGISTRO_DIARIO) -->
+      <button type="button" class="hub-card wod-card" id="tabWod" role="tab" aria-selected="false" aria-controls="panelWod">
+        <div class="hub-header">
+          <div class="hub-icon-circle wod-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M6 5v14M18 5v14M2 9v6M22 9v6M6 12h12" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <span class="hub-tag wod-tag">🏋️ POST-ENTRENAMIENTO</span>
+        </div>
+        <h2 class="hub-title">Registro Post-Entrenamiento (WOD)</h2>
+        <p class="hub-subtitle">Al terminar: Series, Reps/Distancia, Cargas, 1RM Epley y RPE para 'Registro_Diario'.</p>
+        <div class="hub-footer">
+          <span class="hub-status" id="wodStatusBadge">Listo para registrar</span>
+          <span class="hub-pill">Abrir formulario &rarr;</span>
+        </div>
+      </button>
+    </nav>
+
+    <!-- ============================================== -->
+    <!-- SECCIÓN 1: FORMULARIO DE LA MAÑANA (WELLNESS)   -->
+    <!-- ============================================== -->
+    <main class="panels-container">
+      <section id="panelWellness" class="tab-panel active" role="tabpanel" aria-labelledby="tabWellness">
+        <form id="formWellness" class="glass-card form-card morning-form-theme">
+          <div class="form-header">
+            <div class="form-header-badge morning-tag">☀️ PESTAÑA: 'Wellness' &bull; INDEPENDIENTE</div>
+            <h2>Formulario de la Mañana (Wellness)</h2>
+            <p class="section-desc">Se inserta exclusivamente en la pestaña <strong>'Wellness'</strong>, garantizando dejar siempre la fila inferior libre.</p>
+          </div>
+
+          <!-- Banner de Último Envío -->
+          <div id="wellnessNotice" class="session-notice" style="display: none;">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            <span id="wellnessNoticeText">Registro matutino enviado hoy con éxito. Puedes volver a enviar si deseas actualizarlo.</span>
+          </div>
+
+          <div class="form-grid">
+            <!-- Fecha de Registro -->
+            <div class="form-group">
+              <label for="wellnessDate">Fecha de Registro</label>
+              <input type="date" id="wellnessDate" required>
+            </div>
+
+            <!-- Horas de Sueño -->
+            <div class="form-group">
+              <label for="sleepHours">Horas de Sueño: <strong id="valSleepHours" class="highlight-val">7.5h</strong></label>
+              <div class="range-wrapper">
+                <input type="range" id="sleepHours" min="3" max="12" step="0.5" value="7.5">
+                <div class="range-scale">
+                  <span>3h</span>
+                  <span>6h</span>
+                  <span>8h</span>
+                  <span>10h</span>
+                  <span>12h</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Calidad del Sueño (1 a 5) -->
+            <div class="form-group full-width">
+              <label>Calidad del Sueño al Despertar</label>
+              <div class="segmented-control" id="sleepQualityGroup" data-name="sleepQuality">
+                <button type="button" class="seg-btn" data-value="1">1<small>Pésima</small></button>
+                <button type="button" class="seg-btn" data-value="2">2<small>Mala</small></button>
+                <button type="button" class="seg-btn active" data-value="3">3<small>Regular</small></button>
+                <button type="button" class="seg-btn" data-value="4">4<small>Buena</small></button>
+                <button type="button" class="seg-btn" data-value="5">5<small>Óptima</small></button>
+              </div>
+              <input type="hidden" id="sleepQuality" name="sleepQuality" value="3">
+            </div>
+
+            <!-- Nivel de Fatiga General (1 al 10) -->
+            <div class="form-group full-width">
+              <div class="label-with-badge">
+                <label>Nivel de Fatiga Percibida (1 = Fresco / 10 = Exhausto)</label>
+                <span class="badge" id="fatigueBadge">Nivel 4 - Moderada</span>
+              </div>
+              <div class="scale-buttons" id="fatigueGroup">
+                <!-- Generado por JS del 1 al 10 -->
+              </div>
+              <input type="hidden" id="fatigueLevel" name="fatigueLevel" value="4">
+            </div>
+
+            <!-- Columna D: Dolor Muscular (1 a 5, donde 5 = sin dolor / óptimo) -->
+            <div class="form-group full-width">
+              <div class="label-with-badge">
+                <label>Columna D: Dolor Muscular (1 = Dolor Severo / 5 = Sin Dolor)</label>
+                <span class="badge" id="sorenessBadge">5 - Sin Dolor (Óptimo)</span>
+              </div>
+              <div class="segmented-control" id="sorenessGroup" data-name="muscleSoreness">
+                <button type="button" class="seg-btn" data-value="1">1<small>Severo</small></button>
+                <button type="button" class="seg-btn" data-value="2">2<small>Alto</small></button>
+                <button type="button" class="seg-btn" data-value="3">3<small>Moderado</small></button>
+                <button type="button" class="seg-btn" data-value="4">4<small>Leve</small></button>
+                <button type="button" class="seg-btn active" data-value="5">5<small>Sin Dolor</small></button>
+              </div>
+              <input type="hidden" id="muscleSoreness" name="muscleSoreness" value="5">
+            </div>
+
+            <!-- Columna E: Nivel de Estrés Psicológico (1 al 5 -> Inversión 6 - estrés) -->
+            <div class="form-group full-width">
+              <div class="label-with-badge">
+                <label>Columna E: Nivel de Estrés (1 = Muy Bajo / 5 = Extremo)</label>
+                <span class="badge" id="stressBadge">Nivel Guardado: 4 pts (6 - 2)</span>
+              </div>
+              <div class="segmented-control" id="stressGroup" data-name="stressLevel">
+                <button type="button" class="seg-btn" data-value="1">1<small>Muy Bajo</small></button>
+                <button type="button" class="seg-btn active" data-value="2">2<small>Bajo</small></button>
+                <button type="button" class="seg-btn" data-value="3">3<small>Moderado</small></button>
+                <button type="button" class="seg-btn" data-value="4">4<small>Alto</small></button>
+                <button type="button" class="seg-btn" data-value="5">5<small>Extremo</small></button>
+              </div>
+              <input type="hidden" id="stressLevel" name="stressLevel" value="2">
+            </div>
+
+            <!-- Columna F: Estado de Ánimo (1 al 5, donde 5 = excelente / motivado) -->
+            <div class="form-group full-width">
+              <div class="label-with-badge">
+                <label>Columna F: Estado de Ánimo (1 = Muy Bajo / 5 = Excelente)</label>
+                <span class="badge" id="moodBadge">4 - Positivo</span>
+              </div>
+              <div class="segmented-control" id="moodGroup" data-name="moodLevel">
+                <button type="button" class="seg-btn" data-value="1">1<small>Muy Bajo</small></button>
+                <button type="button" class="seg-btn" data-value="2">2<small>Bajo</small></button>
+                <button type="button" class="seg-btn" data-value="3">3<small>Normal</small></button>
+                <button type="button" class="seg-btn active" data-value="4">4<small>Positivo</small></button>
+                <button type="button" class="seg-btn" data-value="5">5<small>Excelente</small></button>
+              </div>
+              <input type="hidden" id="moodLevel" name="moodLevel" value="4">
+            </div>
+
+            <!-- Columna J: PREVIEW EN VIVO DEL WELLNESS SCORE (B + C + D + E + F) -->
+            <div class="calculator-box full-width glass-card-nested">
+              <div class="calc-header">
+                <div class="calc-title">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                  </svg>
+                  <span>Columna J: Wellness Score en Vivo (Suma B+C+D+E+F)</span>
+                </div>
+                <span id="liveWellnessBadge" class="percentage-badge" style="font-size: 1.15rem; width: auto;">Score: 23 / 30 pts</span>
+              </div>
+              <p class="calc-explanation" style="margin-bottom: 0;">
+                Fórmula histórica: <strong>B</strong> (Sueño) + <strong>C</strong> (11 - Fatiga) + <strong>D</strong> (Dolor) + <strong>E</strong> (6 - Estrés) + <strong>F</strong> (Ánimo).
+                <br><em>A mayor puntaje, mayor disposición y mejor estado psicofisiológico del atleta.</em>
+              </p>
+            </div>
+
+            <!-- Zonas de Molestia o Dolor Muscular (Detalle complementario) -->
+            <div class="form-group full-width">
+              <label>Zonas anatómicas con molestia (Detalle complementario)</label>
+              <div class="chips-container" id="sorenessChips">
+                <button type="button" class="chip active" data-value="Sin molestias">✅ Sin molestias</button>
+                <button type="button" class="chip" data-value="Hombros">Hombros</button>
+                <button type="button" class="chip" data-value="Espalda Baja / Lumbar">Espalda Baja</button>
+                <button type="button" class="chip" data-value="Rodillas">Rodillas</button>
+                <button type="button" class="chip" data-value="Cuádriceps">Cuádriceps</button>
+                <button type="button" class="chip" data-value="Isquiotibiales">Isquios</button>
+                <button type="button" class="chip" data-value="Pectorales">Pectorales</button>
+                <button type="button" class="chip" data-value="Muñecas">Muñecas</button>
+                <button type="button" class="chip" data-value="Tobillos/Aquiles">Tobillos</button>
+              </div>
+              <input type="hidden" id="sorenessAreas" name="sorenessAreas" value="Sin molestias">
+            </div>
+
+            <!-- Notas Adicionales -->
+            <div class="form-group full-width">
+              <label for="wellnessNotes">Notas / Sensaciones de la Mañana</label>
+              <textarea id="wellnessNotes" rows="2" placeholder="Ej: Buen descanso, hidratación adecuada, ligera pesadez en piernas..."></textarea>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn-primary btn-morning" id="btnSubmitWellness">
+              <span class="btn-text">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                  <polyline points="17 21 17 13 7 13 7 21"/>
+                  <polyline points="7 3 7 8 15 8"/>
+                </svg>
+                ☀️ Enviar Formulario de la Mañana (Wellness)
+              </span>
+              <span class="spinner" aria-hidden="true"></span>
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- ============================================== -->
+      <!-- SECCIÓN 2: REGISTRO POST-ENTRENAMIENTO (REGISTRO_DIARIO) -->
+      <!-- ============================================== -->
+      <section id="panelWod" class="tab-panel" role="tabpanel" aria-labelledby="tabWod">
+        <form id="formWod" class="glass-card form-card wod-form-theme">
+          <div class="form-header">
+            <div class="form-header-badge wod-tag">🏋️ PESTAÑA: 'Registro_Diario' &bull; v2.1 ACTUALIZADO</div>
+            <h2>Registro Post-Entrenamiento (WOD / Fuerza / Cardio)</h2>
+            <p class="section-desc">Mapeo exacto a columnas A (Atleta), B (Fecha), E (Ejercicio), F (Cat), G (Series), H (Reps/Km), I (Carga), J (1RM), S (RPE), W (Duración), X (Score) e Y (Peso WOD).</p>
+          </div>
+
+          <!-- Banner de Último Envío -->
+          <div id="wodNotice" class="session-notice" style="display: none;">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            <span id="wodNoticeText">Entrenamiento guardado con éxito en 'Registro_Diario'. Puedes registrar otra sesión o fuerza.</span>
+          </div>
+
+          <div class="form-grid">
+            <!-- Columna B: Fecha del Entrenamiento -->
+            <div class="form-group">
+              <label for="wodDate">Columna B: Fecha</label>
+              <input type="date" id="wodDate" required>
+            </div>
+
+            <!-- Columna F: Categoría -->
+            <div class="form-group">
+              <label for="wodCategory">Columna F: Categoría</label>
+              <select id="wodCategory" required>
+                <option value="Fuerza" selected>Fuerza</option>
+                <option value="Levantamiento Olímpico">Levantamiento Olímpico</option>
+                <option value="Cardio">Cardio</option>
+                <option value="Gimnásticos">Gimnásticos</option>
+                <option value="Metcon / WOD">Metcon / WOD</option>
+                <option value="Otro">Otro</option>
+              </select>
+            </div>
+
+            <!-- Columna E: Ejercicio -->
+            <!-- Columna E: Ejercicio / Nombre del WOD -->
+            <div class="form-group full-width" id="groupExercise">
+              <div class="label-with-badge">
+                <label for="wodExercise" id="lblExercise">Columna E: Ejercicio</label>
+                <span id="rmStatusBadge" class="badge">Consultando 1RM...</span>
+              </div>
+              <select id="wodExercise" required>
+                <optgroup label="Levantamientos y Barra">
+                  <option value="Back Squat" selected>Back Squat</option>
+                  <option value="Front Squat">Front Squat</option>
+                  <option value="Deadlift">Deadlift</option>
+                  <option value="Snatch">Snatch</option>
+                  <option value="Clean & Jerk">Clean & Jerk</option>
+                  <option value="Power Clean">Power Clean</option>
+                  <option value="Power Snatch">Power Snatch</option>
+                  <option value="Bench Press">Bench Press</option>
+                  <option value="Strict Press">Strict Press</option>
+                  <option value="Push Press">Push Press</option>
+                  <option value="Overhead Squat">Overhead Squat</option>
+                  <option value="Thruster">Thruster</option>
+                </optgroup>
+                <optgroup label="Gimnásticos (Skills & Peso Corporal)">
+                  <option value="Pull Ups">Pull Ups</option>
+                  <option value="Chest to Bar">Chest to Bar</option>
+                  <option value="Bar Muscle Ups">Bar Muscle Ups</option>
+                  <option value="Ring Muscle Ups">Ring Muscle Ups</option>
+                  <option value="Handstand Push Ups">Handstand Push Ups (HSPU)</option>
+                  <option value="Handstand Walk">Handstand Walk (Metros)</option>
+                  <option value="Toes to Bar">Toes to Bar (T2B)</option>
+                  <option value="Pistols">Pistols (Single Leg)</option>
+                  <option value="Rope Climb">Rope Climb</option>
+                  <option value="Dips">Dips (Fondos en anillas/paralelas)</option>
+                </optgroup>
+                <optgroup label="Metcon / WODs">
+                  <option value="Fran">Fran (21-15-9 Thrusters & Pull Ups)</option>
+                  <option value="Cindy">Cindy (20 min AMRAP)</option>
+                  <option value="Murph">Murph (1 Mile, 100 Pull Ups, 200 Push Ups, 300 Squats, 1 Mile)</option>
+                  <option value="Grace">Grace (30 Clean & Jerk)</option>
+                  <option value="Isabel">Isabel (30 Snatches)</option>
+                  <option value="Helen">Helen (3 Rondas)</option>
+                  <option value="Diane">Diane (21-15-9 Deadlift & HSPU)</option>
+                  <option value="DT">DT (5 Rondas)</option>
+                  <option value="Fight Gone Bad">Fight Gone Bad</option>
+                  <option value="Metcon Personalizado">Metcon del Día / Custom</option>
+                </optgroup>
+                <optgroup label="Cardio (Carrera)">
+                  <option value="Carrera">Carrera</option>
+                  <option value="Remo (Row)">Remo (Row)</option>
+                  <option value="SkiErg">SkiErg</option>
+                  <option value="Bicicleta / Echo Bike">Bicicleta / Echo Bike</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <!-- CAMPO DE TEXTO OPCIONAL SI SELECCIONA METCON PERSONALIZADO -->
+            <div class="form-group full-width" id="customWodGroup" style="display: none;">
+              <label for="wodCustomName">Nombre del WOD / Protocolo personalizado</label>
+              <input type="text" id="wodCustomName" placeholder="Ej: 5 RFT: 15 Cal Row + 12 DB Snatch 22.5kg">
+            </div>
+
+            <!-- MENÚ SECUNDARIO: VARIANTES TÉCNICAS (High Hang, Low Hang, Desde Tacos...) -->
+            <div class="form-group full-width" id="variantGroup" style="display: none;">
+              <div class="label-with-badge">
+                <label for="wodVariant">Variante Técnica (High Hang, Low Hang, Desde Tacos...)</label>
+                <span id="variantBadge" class="badge">Variantes Disponibles</span>
+              </div>
+              <select id="wodVariant">
+                <option value="">-- Estándar / Desde el Suelo (Sin variante) --</option>
+              </select>
+            </div>
+
+            <!-- AVISO CARDIO (Oculto permanentemente según requerimiento) -->
+            <div id="cardioNoticeBox" class="cardio-mode-box full-width" style="display: none;">
+              <div class="cardio-icon">🏃‍♂️</div>
+              <div>
+                <strong>Modo Cardio (Carrera) Activo</strong>
+                <p>El peso y 1RM se deshabilitan. Se inyecta automáticamente 0 kg en Carga y 1RM. Registra tiempo y distancia.</p>
+              </div>
+            </div>
+
+            <!-- SELECTOR TIPO DE WOD (Solo para Metcon / WOD) -->
+            <div class="form-group" id="groupTipoWod" style="display: none;">
+              <label for="wodTipoWod">Tipo de WOD</label>
+              <select id="wodTipoWod">
+                <option value="Por Tiempo (For Time)" selected>Por Tiempo (For Time)</option>
+                <option value="AMRAP">AMRAP (As Many Reps As Possible)</option>
+                <option value="EMOM">EMOM (Every Minute On the Minute)</option>
+              </select>
+            </div>
+
+            <!-- Columna W: TIEMPO / DURACIÓN (Para Metcon y Cardio) -->
+            <div class="form-group" id="groupDuration" style="display: none;">
+              <label for="wodDuration" id="lblDuration">Columna W: Tiempo / Duración</label>
+              <input type="text" id="wodDuration" placeholder="Ej: 04:15 o 24:30">
+            </div>
+
+            <!-- Columna X: SCORE / REPS TOTALES (Para Metcon) -->
+            <div class="form-group" id="groupScoreReps" style="display: none;">
+              <label for="wodScoreReps">Columna X: Score / Reps Totales</label>
+              <input type="number" id="wodScoreReps" min="0" placeholder="Ej: 45 reps o rondas">
+            </div>
+
+            <!-- Columna Y: PESO TRABAJADO WOD (kg) (EXCLUSIVO METCON / WOD) -->
+            <div class="form-group" id="groupPesoWod" style="display: none;">
+              <div class="label-with-badge">
+                <label for="wodPesoWod">Columna Y: Peso trabajado (kg)</label>
+                <span class="badge" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);">Metcon Load</span>
+              </div>
+              <input type="number" id="wodPesoWod" min="0" max="400" step="0.5" value="0" placeholder="Ej: 43 (0 si peso corporal)">
+              <small class="helper-text" style="color: #94a3b8; font-size: 0.75rem; margin-top: 0.25rem; display: block;">Registrado en Col Y sin alterar el tonelaje de fuerza pura.</small>
+            </div>
+
+            <!-- Columna G: Series / Intervalos -->
+            <div class="form-group" id="groupSeries">
+              <label for="wodSeries" id="lblSeries">Columna G: Series</label>
+              <input type="number" id="wodSeries" min="1" max="50" value="5" required>
+            </div>
+
+            <!-- Columna H: Reps / Distancia (km) -->
+            <div class="form-group" id="groupReps">
+              <label for="wodReps" id="lblRepsOrDistance">Columna H: Reps</label>
+              <input type="text" id="wodReps" placeholder="Ej: 5 (o 5.000 km en carrera)" required>
+            </div>
+
+            <!-- Columna I: Carga (kg) -->
+            <div class="form-group" id="groupWeight">
+              <label for="wodWeight">Columna I: Carga (kg)</label>
+              <input type="number" id="wodWeight" min="0" max="600" step="0.5" placeholder="Ej: 100">
+            </div>
+
+            <!-- Columna J: 1RM Atleta (kg) -->
+            <div class="form-group" id="group1RM">
+              <div class="label-with-badge">
+                <label for="wod1RM">Columna J: 1RM Atleta (kg)</label>
+                <span id="source1RMTag" class="source-tag">1RM Hoja</span>
+              </div>
+              <input type="number" id="wod1RM" min="0" max="600" step="0.5" placeholder="Ej: 140">
+            </div>
+
+            <!-- SECCIÓN CONDICIONAL: CALCULADORA EPLEY DE 1RM (Si no tiene 1RM previo) -->
+            <div id="epleyBox" class="calculator-box full-width glass-card-nested" style="display: none;">
+              <div class="calc-header">
+                <div class="calc-title">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                  </svg>
+                  <span>Ecuación de Epley (1RM Estimado)</span>
+                </div>
+                <span class="badge badge-warning">Sin 1RM registrado en 'RM_Atletas'</span>
+              </div>
+              <p class="calc-explanation">
+                Este atleta no cuenta con marca previa para este ejercicio. Ingresa un peso y repeticiones submáximas logradas para estimar su 1RM:
+                <br><code>1RM = Carga &times; (1 + Reps / 30)</code>
+              </p>
+              <div class="calc-inputs-grid">
+                <div class="form-group">
+                  <label for="epleyWeight">Peso Realizado (kg)</label>
+                  <input type="number" id="epleyWeight" min="1" step="0.5" placeholder="Ej: 100">
+                </div>
+                <div class="form-group">
+                  <label for="epleyReps">Reps Completadas</label>
+                  <input type="number" id="epleyReps" min="1" max="25" placeholder="Ej: 5">
+                </div>
+                <div class="form-group">
+                  <label>1RM Estimado Epley</label>
+                  <div class="calc-result-display">
+                    <span id="epleyResultBadge" class="percentage-badge">-- kg</span>
+                  </div>
+                </div>
+              </div>
+              <button type="button" id="btnApplyEpley" class="btn-secondary" style="margin-top: 0.75rem; width: 100%;">
+                ⚡ Aplicar este 1RM Estimado a la Columna J
+              </button>
+            </div>
+
+            <!-- Columna S: RPE (columna 19 en Registro_Diario) -->
+            <div class="form-group full-width" id="groupRpe">
+              <label for="wodRpe" id="lblRpe">Columna S: RPE de la Sesión (Borg CR-10 / RIR)</label>
+              <select id="wodRpe" required>
+                <option value="10">10 - Esfuerzo Máximo / Fallo absoluto</option>
+                <option value="9.5">9.5 - Casi al fallo absoluto</option>
+                <option value="9" selected>9 - Muy pesado (1 rep en reserva)</option>
+                <option value="8.5">8.5 - Exigente (1-2 reps en reserva)</option>
+                <option value="8">8 - Duro pero controlado (2 reps en reserva)</option>
+                <option value="7">7 - Ritmo exigente (3 reps en reserva)</option>
+                <option value="6">6 - Submáximo / Control motor</option>
+                <option value="5">5 o menos - Recuperación / Técnica básica</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn-primary btn-wod" id="btnSubmitWod">
+              <span class="btn-text">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                  <polyline points="17 21 17 13 7 13 7 21"/>
+                  <polyline points="7 3 7 8 15 8"/>
+                </svg>
+                🏋️ Guardar en 'Registro_Diario'
+              </span>
+              <span class="spinner" aria-hidden="true"></span>
+            </button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <!-- Footer Discreto -->
+    <footer class="app-footer">
+      <p>Plataforma Kleos &bull; Arquitectura estricta con pestañas <strong>'Wellness'</strong> y <strong>'Registro_Diario'</strong> &bull; Looker Studio Ready</p>
+    </footer>
+  </div>
+
+  <!-- MODAL DE CONFIGURACIÓN DE URL DE GOOGLE APPS SCRIPT -->
+  <div class="modal-backdrop" id="configModal" aria-hidden="true">
+    <div class="modal-card glass-card">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+          <h3>Conexión Google Apps Script</h3>
+        </div>
+        <button type="button" class="btn-close" id="btnCloseModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Pega aquí la URL de la <strong>Aplicación Web</strong> generada al desplegar tu Google Apps Script en Google Drive:</p>
+        <div class="form-group">
+          <label for="scriptUrlInput">URL de la Web App (Exec URL):</label>
+          <input type="url" id="scriptUrlInput" placeholder="https://script.google.com/macros/s/.../exec">
+          <small class="helper-text">Esta URL se utiliza para obtener la lista dinámica de 'Nombre de Atletas' e insertar los registros en 'Wellness' y 'Registro_Diario'.</small>
+        </div>
+        <div class="connection-test-area">
+          <button type="button" class="btn-secondary" id="btnTestConnection">Probar Conexión & Sincronizar</button>
+          <span id="testResultMsg" class="test-msg"></span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" id="btnCancelModal">Cancelar</button>
+        <button type="button" class="btn-primary" id="btnSaveConfig">Guardar y Sincronizar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATIONS -->
+  <div class="toast-container" id="toastContainer" aria-live="polite"></div>
+
+  <script src="js/app.js?v=2.1"></script>
+</body>
+</html>

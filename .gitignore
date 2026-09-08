@@ -1,0 +1,28 @@
+# ==========================================
+# SEGURIDAD CRÍTICA: CREDENCIALES DE GOOGLE
+# ==========================================
+credentials.json
+config_sheets.json
+*_credentials.json
+*.key.json
+service_account.json
+token.json
+
+# Respaldos locales generados
+respaldo_sheets_*.json
+*.backup.json
+
+# Entorno de Python y Caché
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+.env
+.venv
+env/
+venv/
+
+# Archivos del Sistema Operativo
+.DS_Store
+Thumbs.db
+desktop.ini
