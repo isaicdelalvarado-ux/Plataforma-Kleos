@@ -11,6 +11,11 @@ import socket
 import webbrowser
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 class KleosHttpHandler(SimpleHTTPRequestHandler):
     def end_headers(self):
         # Cabeceras CORS y control de caché

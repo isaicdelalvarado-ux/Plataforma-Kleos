@@ -133,7 +133,7 @@
     <!-- ============================================== -->
     <main class="panels-container">
       <section id="panelWellness" class="tab-panel active" role="tabpanel" aria-labelledby="tabWellness">
-        <form id="formWellness" class="glass-card form-card morning-form-theme">
+        <form id="formWellness" class="glass-card form-card morning-form-theme" novalidate>
           <div class="form-header">
             <div class="form-header-badge morning-tag">☀️ PESTAÑA: 'Wellness' &bull; INDEPENDIENTE</div>
             <h2>Formulario de la Mañana (Wellness)</h2>
@@ -305,7 +305,7 @@
       <!-- SECCIÓN 2: REGISTRO POST-ENTRENAMIENTO (REGISTRO_DIARIO) -->
       <!-- ============================================== -->
       <section id="panelWod" class="tab-panel" role="tabpanel" aria-labelledby="tabWod">
-        <form id="formWod" class="glass-card form-card wod-form-theme">
+        <form id="formWod" class="glass-card form-card wod-form-theme" novalidate>
           <div class="form-header">
             <div class="form-header-badge wod-tag">🏋️ PESTAÑA: 'Registro_Diario' &bull; v2.1 ACTUALIZADO</div>
             <h2>Registro Post-Entrenamiento (WOD / Fuerza / Cardio)</h2>
@@ -457,13 +457,13 @@
             <!-- Columna G: Series / Intervalos -->
             <div class="form-group" id="groupSeries">
               <label for="wodSeries" id="lblSeries">Columna G: Series</label>
-              <input type="number" id="wodSeries" min="1" max="50" value="5" required>
+              <input type="number" id="wodSeries" min="1" max="50" value="5">
             </div>
 
             <!-- Columna H: Reps / Distancia (km) -->
             <div class="form-group" id="groupReps">
               <label for="wodReps" id="lblRepsOrDistance">Columna H: Reps</label>
-              <input type="text" id="wodReps" placeholder="Ej: 5 (o 5.000 km en carrera)" required>
+              <input type="text" id="wodReps" placeholder="Ej: 5 (o 5.000 km en carrera)">
             </div>
 
             <!-- Columna I: Carga (kg) -->
@@ -591,6 +591,6 @@
   <!-- TOAST NOTIFICATIONS -->
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="js/app.js?v=2.1.1"></script>
+  <script src="js/app.js?v=2.1.2"></script>
 </body>
 </html>

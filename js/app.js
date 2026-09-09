@@ -660,6 +660,25 @@ document.addEventListener('DOMContentLoaded', () => {
         rmStatusBadge.textContent = '🏃 Cardio Carrera (Carga = 0 kg)';
         rmStatusBadge.className = 'badge';
       }
+    } else {
+      // 5. OTRO / GENERAL
+      if (lblExercise) lblExercise.textContent = 'Columna E: Ejercicio / Actividad';
+      if (groupSeries) groupSeries.style.display = 'block';
+      if (lblSeries) lblSeries.textContent = 'Columna G: Series';
+      if (groupReps) groupReps.style.display = 'block';
+      if (lblRepsOrDistance) lblRepsOrDistance.textContent = 'Columna H: Reps / Cantidad';
+      if (wodReps) wodReps.placeholder = 'Ej: 5';
+      if (groupWeight) groupWeight.style.display = 'block';
+      if (wodWeight) wodWeight.disabled = false;
+      if (group1RM) group1RM.style.display = 'block';
+      if (wod1RM) wod1RM.disabled = false;
+      if (groupTipoWod) groupTipoWod.style.display = 'none';
+      if (groupDuration) groupDuration.style.display = 'none';
+      if (groupScoreReps) groupScoreReps.style.display = 'none';
+      if (groupPesoWod) groupPesoWod.style.display = 'none';
+      if (customWodGroup) customWodGroup.style.display = 'none';
+      if (lblRpe) lblRpe.textContent = 'Columna S: RPE de la Sesión';
+      lookupAndApply1RM(athlete, exercise, motherKey);
     }
   }
 
@@ -999,12 +1018,18 @@ document.addEventListener('DOMContentLoaded', () => {
     submitButton.classList.add('loading');
     submitButton.disabled = true;
 
+    // Timeout de 25 segundos para evitar que la interfaz quede congelada si la conexión móvil es lenta
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+
     try {
       const response = await fetch(currentScriptUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
 
       let result = {};
       try {
@@ -1021,10 +1046,16 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error(result.message || 'Error al insertar en Google Sheets');
       }
     } catch (error) {
+      clearTimeout(timeoutId);
       console.error('Error al enviar registro:', error);
       const sheetName = type === 'wellness' ? 'Wellness' : 'Registro_Diario';
-      showToast(`Registro enviado hacia '${sheetName}'. Si no aparece, verifica permisos 'Cualquier usuario'`, 'success');
-      return true;
+      if (error.name === 'AbortError') {
+        showToast(`⏱️ Solicitud enviada hacia '${sheetName}'. El servidor sigue procesando en segundo plano.`, 'success');
+        return true;
+      } else {
+        showToast(`Registro enviado hacia '${sheetName}'. Si no aparece, verifica permisos 'Cualquier usuario'`, 'success');
+        return true;
+      }
     } finally {
       submitButton.classList.remove('loading');
       submitButton.disabled = false;
@@ -1038,25 +1069,35 @@ document.addEventListener('DOMContentLoaded', () => {
   formWellness.addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    const data = {
-      date: document.getElementById('wellnessDate').value,
-      sleepHours: parseFloat(document.getElementById('sleepHours').value) || 7.5,
-      sleepQuality: parseInt(document.getElementById('sleepQuality').value, 10) || 3,
-      fatigueLevel: parseInt(document.getElementById('fatigueLevel').value, 10) || 4,
-      muscleSoreness: parseInt(document.getElementById('muscleSoreness').value, 10) || 5,
-      stressLevel: parseInt(document.getElementById('stressLevel').value, 10) || 2,
-      moodLevel: parseInt(document.getElementById('moodLevel').value, 10) || 4,
-      sorenessAreas: document.getElementById('sorenessAreas').value,
-      notes: document.getElementById('wellnessNotes').value.trim()
-    };
+    try {
+      const data = {
+        date: document.getElementById('wellnessDate').value,
+        sleepHours: parseFloat(document.getElementById('sleepHours').value) || 7.5,
+        sleepQuality: parseInt(document.getElementById('sleepQuality').value, 10) || 3,
+        fatigueLevel: parseInt(document.getElementById('fatigueLevel').value, 10) || 4,
+        muscleSoreness: parseInt(document.getElementById('muscleSoreness').value, 10) || 5,
+        stressLevel: parseInt(document.getElementById('stressLevel').value, 10) || 2,
+        moodLevel: parseInt(document.getElementById('moodLevel').value, 10) || 4,
+        sorenessAreas: document.getElementById('sorenessAreas').value,
+        notes: document.getElementById('wellnessNotes').value.trim()
+      };
 
-    const success = await submitPayload('wellness', data, btnSubmitWellness);
-    if (success) {
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      localStorage.setItem(STORAGE_KEYS.LAST_WELLNESS, JSON.stringify({ date: todayStr, time: timeStr }));
-      updateSessionStatusIndicators();
-      document.getElementById('wellnessNotes').value = '';
+      const success = await submitPayload('wellness', data, btnSubmitWellness);
+      if (success) {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        localStorage.setItem(STORAGE_KEYS.LAST_WELLNESS, JSON.stringify({ date: todayStr, time: timeStr }));
+        updateSessionStatusIndicators();
+        document.getElementById('wellnessNotes').value = '';
+      }
+    } catch (err) {
+      console.error('Error en formulario Wellness:', err);
+      showToast('Ocurrió un error inesperado al procesar el formulario de la mañana', 'error');
+    } finally {
+      if (btnSubmitWellness) {
+        btnSubmitWellness.classList.remove('loading');
+        btnSubmitWellness.disabled = false;
+      }
     }
   });
 
@@ -1068,122 +1109,161 @@ document.addEventListener('DOMContentLoaded', () => {
   formWod.addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    const category = wodCategory.value;
-    let exercise = wodExercise.value;
-
-    if (category === 'Metcon / WOD' && exercise === 'Metcon Personalizado') {
-      const customName = wodCustomName && wodCustomName.value.trim();
-      if (customName) exercise = customName;
-    }
-
-    const vSelect = document.getElementById('wodVariant');
-    const variantVal = (vSelect && vSelect.value) ? vSelect.value.trim() : '';
-    const finalExercise = (variantVal && variantVal.toLowerCase().indexOf('estándar') === -1)
-      ? `${exercise} (${variantVal})`
-      : exercise;
-
-    let seriesVal = 0;
-    let repsVal = 0;
-    let weightVal = 0;
-    let rmVal = 0;
-    let distanciaVal = 0;
-    let duracionVal = '';
-    let scoreRepsVal = 0;
-    let pesoWodVal = 0;
-
-    if (category === 'Fuerza' || category === 'Levantamiento Olímpico') {
-      seriesVal = parseInt(document.getElementById('wodSeries').value, 10) || 1;
-      repsVal = wodReps.value.trim();
-      weightVal = parseFloat(wodWeight.value) || 0;
-      rmVal = parseFloat(wod1RM.value) || 0;
-      duracionVal = '';
-      scoreRepsVal = 0;
-      pesoWodVal = 0;
-    } else if (category === 'Gimnásticos') {
-      seriesVal = parseInt(document.getElementById('wodSeries').value, 10) || 1;
-      repsVal = wodReps.value.trim();
-      weightVal = 0;
-      rmVal = 0;
-      duracionVal = '';
-      scoreRepsVal = 0;
-      pesoWodVal = 0;
-    } else if (category === 'Metcon / WOD') {
-      seriesVal = 0;
-      duracionVal = wodDuration ? wodDuration.value.trim() : '';
-      scoreRepsVal = wodScoreReps ? (parseInt(wodScoreReps.value, 10) || 0) : 0;
-      repsVal = scoreRepsVal;
-      // Regla Crítica: pesoWod es numérico en kg para Metcon, y 0 en las demás categorías
-      pesoWodVal = wodPesoWod ? (parseFloat(wodPesoWod.value) || 0) : 0;
-      weightVal = 0; // Se aisla el tonelaje de fuerza pura en 0
-      rmVal = 0;
-    } else if (category === 'Cardio') {
-      seriesVal = parseInt(document.getElementById('wodSeries').value, 10) || 1;
-      distanciaVal = parseFloat(wodReps.value) || 0;
-      repsVal = distanciaVal;
-      duracionVal = wodDuration ? wodDuration.value.trim() : '';
-      weightVal = 0;
-      rmVal = 0;
-      scoreRepsVal = 0;
-      pesoWodVal = 0;
-    } else {
-      seriesVal = parseInt(document.getElementById('wodSeries').value, 10) || 1;
-      repsVal = wodReps.value.trim();
-      weightVal = parseFloat(wodWeight.value) || 0;
-      rmVal = parseFloat(wod1RM.value) || 0;
-      pesoWodVal = 0;
-    }
-
-    const tipoWodVal = (category === 'Metcon / WOD' && wodTipoWod) ? wodTipoWod.value : 'N/A';
-
-    const data = {
-      fecha: wodDateInput.value,
-      categoria: category,
-      ejercicio: finalExercise,
-      variante: variantVal,
-      tipoWod: tipoWodVal,
-      series: seriesVal,
-      reps: repsVal,
-      carga: weightVal,
-      unRM: rmVal,
-      distancia: distanciaVal,
-      duracion: duracionVal,
-      scoreReps: scoreRepsVal,
-      pesoWod: pesoWodVal,
-      rpe: document.getElementById('wodRpe').value,
-      // Retrocompatibilidad
-      date: wodDateInput.value,
-      category: category,
-      exercise: finalExercise,
-      seriesOrIntervals: seriesVal,
-      repsOrDistance: category === 'Cardio' ? distanciaVal : (category === 'Metcon / WOD' ? scoreRepsVal : repsVal),
-      weight: weightVal,
-      oneRepMax: rmVal,
-      duration: duracionVal
-    };
-
-    const success = await submitPayload('registro_diario', data, btnSubmitWod);
-    if (success) {
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      localStorage.setItem(STORAGE_KEYS.LAST_WOD, JSON.stringify({ date: todayStr, time: timeStr }));
-      updateSessionStatusIndicators();
-
-      // Limpiar campos según modalidad
-      if (category === 'Fuerza' || category === 'Levantamiento Olímpico') {
-        wodReps.value = '';
-        wodWeight.value = '';
-      } else if (category === 'Gimnásticos') {
-        wodReps.value = '';
-      } else if (category === 'Metcon / WOD') {
-        if (wodDuration) wodDuration.value = '';
-        if (wodScoreReps) wodScoreReps.value = '';
-        if (wodPesoWod) wodPesoWod.value = '0';
-        if (wodCustomName) wodCustomName.value = '';
-      } else if (category === 'Cardio') {
-        wodReps.value = '';
-        if (wodDuration) wodDuration.value = '';
+    try {
+      const athlete = athleteSelect ? athleteSelect.value.trim() : '';
+      if (!athlete) {
+        showToast('Por favor selecciona tu nombre de Atleta arriba', 'error');
+        if (athleteSelect) athleteSelect.focus();
+        return;
       }
-      if (vSelect) vSelect.selectedIndex = 0;
+
+      const category = wodCategory.value;
+      let exercise = wodExercise.value;
+
+      if (category === 'Metcon / WOD' && exercise === 'Metcon Personalizado') {
+        const customName = wodCustomName && wodCustomName.value.trim();
+        if (customName) exercise = customName;
+      }
+
+      const vSelect = document.getElementById('wodVariant');
+      const variantVal = (vSelect && vSelect.value) ? vSelect.value.trim() : '';
+      const finalExercise = (variantVal && variantVal.toLowerCase().indexOf('estándar') === -1)
+        ? `${exercise} (${variantVal})`
+        : exercise;
+
+      let seriesVal = 0;
+      let repsVal = 0;
+      let weightVal = 0;
+      let rmVal = 0;
+      let distanciaVal = 0;
+      let duracionVal = '';
+      let scoreRepsVal = 0;
+      let pesoWodVal = 0;
+
+      if (category === 'Fuerza' || category === 'Levantamiento Olímpico') {
+        const repsRaw = wodReps ? wodReps.value.trim() : '';
+        if (!repsRaw) {
+          showToast('⚠️ Por favor indica las Repeticiones realizadas (ej: 5)', 'error');
+          if (wodReps) wodReps.focus();
+          return;
+        }
+        seriesVal = parseInt(document.getElementById('wodSeries').value, 10) || 1;
+        repsVal = repsRaw;
+        weightVal = parseFloat(wodWeight.value) || 0;
+        rmVal = parseFloat(wod1RM.value) || 0;
+        duracionVal = '';
+        scoreRepsVal = 0;
+        pesoWodVal = 0;
+      } else if (category === 'Gimnásticos') {
+        const repsRaw = wodReps ? wodReps.value.trim() : '';
+        if (!repsRaw) {
+          showToast('⚠️ Por favor indica las Repeticiones o Metros completados', 'error');
+          if (wodReps) wodReps.focus();
+          return;
+        }
+        seriesVal = parseInt(document.getElementById('wodSeries').value, 10) || 1;
+        repsVal = repsRaw;
+        weightVal = 0;
+        rmVal = 0;
+        duracionVal = '';
+        scoreRepsVal = 0;
+        pesoWodVal = 0;
+      } else if (category === 'Metcon / WOD') {
+        duracionVal = wodDuration ? wodDuration.value.trim() : '';
+        scoreRepsVal = wodScoreReps ? (parseInt(wodScoreReps.value, 10) || 0) : 0;
+        if (!duracionVal && !scoreRepsVal) {
+          showToast('⚠️ Por favor indica el Tiempo o el Score / Reps del WOD', 'error');
+          if (wodDuration) wodDuration.focus();
+          return;
+        }
+        seriesVal = 0;
+        repsVal = scoreRepsVal;
+        pesoWodVal = wodPesoWod ? (parseFloat(wodPesoWod.value) || 0) : 0;
+        weightVal = 0; // Se aísla el tonelaje de fuerza pura en 0
+        rmVal = 0;
+      } else if (category === 'Cardio') {
+        const distRaw = wodReps ? wodReps.value.trim() : '';
+        if (!distRaw) {
+          showToast('⚠️ Por favor indica la Distancia recorrida (ej: 5.0 km)', 'error');
+          if (wodReps) wodReps.focus();
+          return;
+        }
+        seriesVal = parseInt(document.getElementById('wodSeries').value, 10) || 1;
+        distanciaVal = parseFloat(distRaw) || 0;
+        repsVal = distanciaVal;
+        duracionVal = wodDuration ? wodDuration.value.trim() : '';
+        weightVal = 0;
+        rmVal = 0;
+        scoreRepsVal = 0;
+        pesoWodVal = 0;
+      } else {
+        seriesVal = parseInt(document.getElementById('wodSeries').value, 10) || 1;
+        repsVal = wodReps ? wodReps.value.trim() : '1';
+        weightVal = parseFloat(wodWeight.value) || 0;
+        rmVal = parseFloat(wod1RM.value) || 0;
+        pesoWodVal = 0;
+      }
+
+      const tipoWodVal = (category === 'Metcon / WOD' && wodTipoWod) ? wodTipoWod.value : 'N/A';
+
+      const data = {
+        fecha: wodDateInput.value,
+        categoria: category,
+        ejercicio: finalExercise,
+        variante: variantVal,
+        tipoWod: tipoWodVal,
+        series: seriesVal,
+        reps: repsVal,
+        carga: weightVal,
+        unRM: rmVal,
+        distancia: distanciaVal,
+        duracion: duracionVal,
+        scoreReps: scoreRepsVal,
+        pesoWod: pesoWodVal,
+        rpe: document.getElementById('wodRpe').value,
+        // Retrocompatibilidad
+        date: wodDateInput.value,
+        category: category,
+        exercise: finalExercise,
+        seriesOrIntervals: seriesVal,
+        repsOrDistance: category === 'Cardio' ? distanciaVal : (category === 'Metcon / WOD' ? scoreRepsVal : repsVal),
+        weight: weightVal,
+        oneRepMax: rmVal,
+        duration: duracionVal
+      };
+
+      const success = await submitPayload('registro_diario', data, btnSubmitWod);
+      if (success) {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        localStorage.setItem(STORAGE_KEYS.LAST_WOD, JSON.stringify({ date: todayStr, time: timeStr }));
+        updateSessionStatusIndicators();
+
+        // Limpiar campos según modalidad
+        if (category === 'Fuerza' || category === 'Levantamiento Olímpico') {
+          if (wodReps) wodReps.value = '';
+          if (wodWeight) wodWeight.value = '';
+        } else if (category === 'Gimnásticos') {
+          if (wodReps) wodReps.value = '';
+        } else if (category === 'Metcon / WOD') {
+          if (wodDuration) wodDuration.value = '';
+          if (wodScoreReps) wodScoreReps.value = '';
+          if (wodPesoWod) wodPesoWod.value = '0';
+          if (wodCustomName) wodCustomName.value = '';
+        } else if (category === 'Cardio') {
+          if (wodReps) wodReps.value = '';
+          if (wodDuration) wodDuration.value = '';
+        }
+        if (vSelect) vSelect.selectedIndex = 0;
+      }
+    } catch (err) {
+      console.error('Error procesando formulario WOD:', err);
+      showToast('Ocurrió un error inesperado al procesar el registro.', 'error');
+    } finally {
+      if (btnSubmitWod) {
+        btnSubmitWod.classList.remove('loading');
+        btnSubmitWod.disabled = false;
+      }
     }
   });
 
