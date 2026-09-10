@@ -32,7 +32,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   
-  <link rel="stylesheet" href="css/styles.css?v=2.3.0">
+  <link rel="stylesheet" href="css/styles.css?v=2.4.0">
 </head>
 <body>
   <!-- Fondo cinemático del Partenón con velo oscuro -->
@@ -457,12 +457,27 @@
               <input type="number" id="wodRoundsCompleted" min="0" max="100" value="4" placeholder="Ej: 4">
             </div>
 
-            <!-- REPETICIONES ADICIONALES (Visible solo si NO terminó el WOD) -->
+            <!-- REPETICIONES ADICIONALES (Visible solo si NO terminó el WOD o en AMRAP) -->
             <div class="form-group" id="groupExtraReps" style="display: none;">
               <label for="wodExtraReps">Repeticiones adicionales</label>
               <input type="number" id="wodExtraReps" min="0" max="999" placeholder="Ej: 15, 150 u 8">
               <small class="helper-text" style="color: #38bdf8; font-size: 0.75rem; margin-top: 0.25rem; display: block;">
                 ⚡ Formato 3 decimales: Rondas + (Reps / 1000)
+              </small>
+            </div>
+
+            <!-- EMOM: MINUTOS TOTALES (Exclusivo EMOM) -->
+            <div class="form-group" id="groupEmomTotalMinutes" style="display: none;">
+              <label for="wodEmomTotalMinutes">Minutos Totales del EMOM</label>
+              <input type="number" id="wodEmomTotalMinutes" min="1" max="180" value="16" placeholder="Ej: 16 o 20">
+            </div>
+
+            <!-- EMOM: MINUTOS COMPLETADOS CON ÉXITO (Exclusivo EMOM) -->
+            <div class="form-group" id="groupEmomCompletedMinutes" style="display: none;">
+              <label for="wodEmomCompletedMinutes">Minutos Completados con Éxito</label>
+              <input type="number" id="wodEmomCompletedMinutes" min="0" max="180" value="16" placeholder="Ej: 14 o 16">
+              <small class="helper-text" style="color: #38bdf8; font-size: 0.75rem; margin-top: 0.25rem; display: block;">
+                ⚡ Minutos faltantes = Totales - Completados | Formato: Completados + (Faltantes / 1000)
               </small>
             </div>
 
@@ -621,6 +636,6 @@
   <!-- TOAST NOTIFICATIONS -->
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="js/app.js?v=2.3.0"></script>
+  <script src="js/app.js?v=2.4.0"></script>
 </body>
 </html>

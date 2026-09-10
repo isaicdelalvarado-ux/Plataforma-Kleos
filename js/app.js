@@ -74,6 +74,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const wodRoundsCompleted = document.getElementById('wodRoundsCompleted');
   const groupExtraReps = document.getElementById('groupExtraReps');
   const wodExtraReps = document.getElementById('wodExtraReps');
+  const groupEmomTotalMinutes = document.getElementById('groupEmomTotalMinutes');
+  const wodEmomTotalMinutes = document.getElementById('wodEmomTotalMinutes');
+  const groupEmomCompletedMinutes = document.getElementById('groupEmomCompletedMinutes');
+  const wodEmomCompletedMinutes = document.getElementById('wodEmomCompletedMinutes');
   const badgeScoreCalculado = document.getElementById('badgeScoreCalculado');
   const groupScoreReps = document.getElementById('groupScoreReps');
   const wodScoreReps = document.getElementById('wodScoreReps');
@@ -288,48 +292,178 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // =========================================================================
   // GESTIÓN DE TIME CAP Y SCORE MATEMÁTICO DE 3 POSICIONES DECIMALES (COL X)
-  // Fórmula interna: Valor_Columna_X = Rondas_Completas + (Reps_Adicionales / 1000)
+  // =========================================================================
+  // GESTIÓN INTEGRAL DE FORMATOS METCON (FOR TIME, AMRAP, EMOM)
+  // Formato matemático universal de TRES (3) decimales (/1000) en Col X ('Score_Reps')
   // =========================================================================
   function updateMetconScorePreview() {
     if (!wodScoreReps) return;
 
-    const isNoTermino = wodTimeCapFinished && wodTimeCapFinished.value === 'NO';
+    const tipoWod = (wodTipoWod ? wodTipoWod.value : 'Por Tiempo (For Time)');
+    const isForTime = tipoWod.indexOf('Time') !== -1 || tipoWod.indexOf('Tiempo') !== -1;
+    const isAmrap = tipoWod.indexOf('AMRAP') !== -1;
+    const isEmom = tipoWod.indexOf('EMOM') !== -1;
 
-    if (groupExtraReps) {
-      groupExtraReps.style.display = isNoTermino ? 'block' : 'none';
-    }
+    // Regla: Si no estamos en Metcon / WOD, salir
+    if (wodCategory && wodCategory.value !== 'Metcon / WOD') return;
 
-    if (wodRoundsCompleted) {
+    if (isForTime) {
+      // -----------------------------------------------------------------------
+      // A. SI TIPO DE WOD == "For Time"
+      // -----------------------------------------------------------------------
+      if (groupTimeCap) groupTimeCap.style.display = 'block';
+      if (groupRoundsCompleted) groupRoundsCompleted.style.display = 'block';
+      if (groupEmomTotalMinutes) groupEmomTotalMinutes.style.display = 'none';
+      if (groupEmomCompletedMinutes) groupEmomCompletedMinutes.style.display = 'none';
+
+      const isNoTermino = wodTimeCapFinished && wodTimeCapFinished.value === 'NO';
+
       if (isNoTermino) {
-        wodRoundsCompleted.value = 3;
-        wodRoundsCompleted.readOnly = true;
-        wodRoundsCompleted.style.opacity = '0.75';
+        // Si [NO]: Fija automáticamente las Rondas Completadas en 3 y muestra de forma obligatoria el campo numérico abierto: "Repeticiones adicionales"
+        if (wodRoundsCompleted) {
+          wodRoundsCompleted.value = 3;
+          wodRoundsCompleted.readOnly = true;
+          wodRoundsCompleted.style.opacity = '0.75';
+        }
+        if (groupExtraReps) groupExtraReps.style.display = 'block';
       } else {
+        // Si [SÍ]: Bloquea el campo de Rondas en el número prescrito por la programación (Ej: 4) y OCULTA el campo de repeticiones adicionales
+        if (wodRoundsCompleted) {
+          if (!wodRoundsCompleted.value || wodRoundsCompleted.value === '3') {
+            wodRoundsCompleted.value = 4;
+          }
+          wodRoundsCompleted.readOnly = true;
+          wodRoundsCompleted.style.opacity = '0.85';
+        }
+        if (groupExtraReps) groupExtraReps.style.display = 'none';
+        if (wodExtraReps) wodExtraReps.value = '';
+      }
+
+      let rondas = parseInt(wodRoundsCompleted ? wodRoundsCompleted.value : 4, 10);
+      if (isNaN(rondas) || rondas < 0) rondas = 0;
+
+      let extraReps = 0;
+      if (isNoTermino && wodExtraReps) {
+        extraReps = parseInt(wodExtraReps.value, 10);
+        if (isNaN(extraReps) || extraReps < 0) extraReps = 0;
+      }
+
+      // Fórmula: Rondas_Completas + (Reps_Adicionales / 1000)
+      const scoreVal = (rondas + (extraReps / 1000)).toFixed(3);
+      wodScoreReps.value = scoreVal;
+
+      if (badgeScoreCalculado) {
+        if (!isNoTermino) {
+          badgeScoreCalculado.textContent = `${scoreVal} (For Time: ${rondas} rondas completas invicto)`;
+        } else {
+          badgeScoreCalculado.textContent = `${scoreVal} (For Time: ${rondas}R + ${extraReps} reps extras)`;
+        }
+      }
+
+    } else if (isAmrap) {
+      // -----------------------------------------------------------------------
+      // B. SI TIPO DE WOD == "AMRAP"
+      // ¡REGLA ESTRICTA!: NO muestres el selector de "¿Terminó el WOD?"
+      // -----------------------------------------------------------------------
+      if (groupTimeCap) groupTimeCap.style.display = 'none';
+      if (groupEmomTotalMinutes) groupEmomTotalMinutes.style.display = 'none';
+      if (groupEmomCompletedMinutes) groupEmomCompletedMinutes.style.display = 'none';
+
+      // Despliega de forma directa y abierta dos campos numéricos para el atleta:
+      // "Rondas Completadas" (Input entero libre, ej: 8)
+      // "Repeticiones Adicionales" (Input entero libre para la ronda que quedó a medias, ej: 15)
+      if (groupRoundsCompleted) groupRoundsCompleted.style.display = 'block';
+      if (wodRoundsCompleted) {
         wodRoundsCompleted.readOnly = false;
         wodRoundsCompleted.style.opacity = '1';
       }
-    }
+      if (groupExtraReps) groupExtraReps.style.display = 'block';
+      if (wodExtraReps) {
+        wodExtraReps.readOnly = false;
+      }
 
-    let rondas = parseInt(wodRoundsCompleted ? wodRoundsCompleted.value : 3, 10);
-    if (isNaN(rondas) || rondas < 0) rondas = 0;
+      let rondas = parseInt(wodRoundsCompleted ? wodRoundsCompleted.value : 0, 10);
+      if (isNaN(rondas) || rondas < 0) rondas = 0;
 
-    let extraReps = 0;
-    if (isNoTermino && wodExtraReps) {
-      extraReps = parseInt(wodExtraReps.value, 10);
+      let extraReps = parseInt(wodExtraReps ? wodExtraReps.value : 0, 10);
       if (isNaN(extraReps) || extraReps < 0) extraReps = 0;
-    }
 
-    // Formato matemático estricto de TRES (3) decimales
-    const scoreVal = (rondas + (extraReps / 1000)).toFixed(3);
-    wodScoreReps.value = scoreVal;
+      // Fórmula: Rondas_Completas + (Reps_Adicionales / 1000)
+      const scoreVal = (rondas + (extraReps / 1000)).toFixed(3);
+      wodScoreReps.value = scoreVal;
 
-    if (badgeScoreCalculado) {
-      if (!isNoTermino) {
-        badgeScoreCalculado.textContent = `${scoreVal} (${rondas} rondas completas)`;
-      } else {
-        badgeScoreCalculado.textContent = `${scoreVal} (${rondas}R + ${extraReps} reps)`;
+      if (badgeScoreCalculado) {
+        badgeScoreCalculado.textContent = `${scoreVal} (AMRAP: ${rondas}R + ${extraReps} reps)`;
+      }
+
+    } else if (isEmom) {
+      // -----------------------------------------------------------------------
+      // C. SI TIPO DE WOD == "EMOM"
+      // ¡REGLA ESTRICTA!: NO muestres el selector de "¿Terminó el WOD?" ni repeticiones adicionales ni rondas
+      // -----------------------------------------------------------------------
+      if (groupTimeCap) groupTimeCap.style.display = 'none';
+      if (groupRoundsCompleted) groupRoundsCompleted.style.display = 'none';
+      if (groupExtraReps) groupExtraReps.style.display = 'none';
+
+      // Despliega de forma directa dos campos numéricos específicos para el atleta:
+      // "Minutos Totales del EMOM" (ej: 16)
+      // "Minutos Completados con Éxito" (ej: 14)
+      if (groupEmomTotalMinutes) groupEmomTotalMinutes.style.display = 'block';
+      if (groupEmomCompletedMinutes) groupEmomCompletedMinutes.style.display = 'block';
+
+      let minTotales = parseInt(wodEmomTotalMinutes ? wodEmomTotalMinutes.value : 16, 10);
+      if (isNaN(minTotales) || minTotales < 0) minTotales = 0;
+
+      let minCompletados = parseInt(wodEmomCompletedMinutes ? wodEmomCompletedMinutes.value : 0, 10);
+      if (isNaN(minCompletados) || minCompletados < 0) minCompletados = 0;
+      if (minCompletados > minTotales) minCompletados = minTotales;
+
+      let minFaltantes = Math.max(0, minTotales - minCompletados);
+
+      // Fórmula EMOM: Valor_Columna_X = Minutos_Completados + (Minutos_Faltantes / 1000)
+      const scoreVal = (minCompletados + (minFaltantes / 1000)).toFixed(3);
+      wodScoreReps.value = scoreVal;
+
+      if (badgeScoreCalculado) {
+        if (minFaltantes === 0) {
+          badgeScoreCalculado.textContent = `${scoreVal} (EMOM: ${minCompletados}/${minTotales} min completado al 100%)`;
+        } else {
+          badgeScoreCalculado.textContent = `${scoreVal} (EMOM: ${minCompletados}/${minTotales} min | Faltaron ${minFaltantes} min)`;
+        }
+      }
+
+      // Sincronizar duración si está vacía
+      if (wodDuration && (!wodDuration.value || wodDuration.value === '07:50' || wodDuration.value === '16:00')) {
+        wodDuration.value = `${minTotales.toString().padStart(2, '0')}:00`;
       }
     }
+  }
+
+  if (wodTipoWod) {
+    wodTipoWod.addEventListener('change', () => {
+      const tipo = wodTipoWod.value;
+      if (tipo.indexOf('AMRAP') !== -1) {
+        if (wodRoundsCompleted && (!wodRoundsCompleted.value || wodRoundsCompleted.value === '3' || wodRoundsCompleted.value === '4')) {
+          wodRoundsCompleted.value = 8;
+        }
+        if (wodExtraReps && (!wodExtraReps.value || wodExtraReps.value === '0')) {
+          wodExtraReps.value = 15;
+        }
+      } else if (tipo.indexOf('EMOM') !== -1) {
+        if (wodEmomTotalMinutes && !wodEmomTotalMinutes.value) {
+          wodEmomTotalMinutes.value = 16;
+        }
+        if (wodEmomCompletedMinutes && !wodEmomCompletedMinutes.value) {
+          wodEmomCompletedMinutes.value = 16;
+        }
+      } else {
+        // For Time
+        if (wodRoundsCompleted && (!wodRoundsCompleted.value || wodRoundsCompleted.value === '8')) {
+          wodRoundsCompleted.value = 4;
+        }
+      }
+      updateMetconScorePreview();
+    });
   }
 
   if (wodTimeCapFinished) {
@@ -353,6 +487,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (wodExtraReps) {
     wodExtraReps.addEventListener('input', updateMetconScorePreview);
+  }
+
+  if (wodEmomTotalMinutes) {
+    wodEmomTotalMinutes.addEventListener('input', updateMetconScorePreview);
+  }
+
+  if (wodEmomCompletedMinutes) {
+    wodEmomCompletedMinutes.addEventListener('input', updateMetconScorePreview);
   }
 
   // Fechas predeterminadas
@@ -712,8 +854,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (lblDuration) lblDuration.textContent = 'Columna W: Tiempo / Duración (MM:SS) *Obligatorio*';
       if (wodDuration) wodDuration.placeholder = 'Ej: 07:50 o 18:30 (Obligatorio)';
 
-      if (groupTimeCap) groupTimeCap.style.display = 'block';
-      if (groupRoundsCompleted) groupRoundsCompleted.style.display = 'block';
       if (groupScoreReps) groupScoreReps.style.display = 'block';
       updateMetconScorePreview();
 
@@ -788,11 +928,14 @@ document.addEventListener('DOMContentLoaded', () => {
       lookupAndApply1RM(athlete, exercise, motherKey);
     }
 
-    // Ocultar selectores de Time Cap y Rondas fuera de Metcon
+    // Ocultar selectores de Time Cap, Rondas y EMOM fuera de Metcon
     if (category !== 'Metcon / WOD') {
+      if (groupTipoWod) groupTipoWod.style.display = 'none';
       if (groupTimeCap) groupTimeCap.style.display = 'none';
       if (groupRoundsCompleted) groupRoundsCompleted.style.display = 'none';
       if (groupExtraReps) groupExtraReps.style.display = 'none';
+      if (groupEmomTotalMinutes) groupEmomTotalMinutes.style.display = 'none';
+      if (groupEmomCompletedMinutes) groupEmomCompletedMinutes.style.display = 'none';
     }
   }
 
@@ -1274,6 +1417,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       let rondasVal = 0;
       let extraVal = 0;
+      let emomTotalesVal = 0;
+      let emomCompletadosVal = 0;
 
       if (category === 'Fuerza' || category === 'Levantamiento Olímpico') {
         const repsRaw = wodReps ? wodReps.value.trim() : '';
@@ -1311,12 +1456,33 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
 
-        const isFinished = wodTimeCapFinished ? (wodTimeCapFinished.value === 'SI') : true;
-        rondasVal = parseInt(wodRoundsCompleted ? wodRoundsCompleted.value : 0, 10) || 0;
-        extraVal = isFinished ? 0 : (parseInt(wodExtraReps ? wodExtraReps.value : 0, 10) || 0);
+        const tipo = wodTipoWod ? wodTipoWod.value : 'Por Tiempo (For Time)';
+        const isForTime = tipo.indexOf('Time') !== -1 || tipo.indexOf('Tiempo') !== -1;
+        const isAmrap = tipo.indexOf('AMRAP') !== -1;
+        const isEmom = tipo.indexOf('EMOM') !== -1;
 
-        // Fórmula matemática estricta: Valor_Columna_X = Rondas_Completas + (Reps_Adicionales / 1000)
-        scoreRepsVal = (rondasVal + (extraVal / 1000)).toFixed(3);
+        if (isEmom) {
+          emomTotalesVal = parseInt(wodEmomTotalMinutes ? wodEmomTotalMinutes.value : 16, 10) || 0;
+          emomCompletadosVal = parseInt(wodEmomCompletedMinutes ? wodEmomCompletedMinutes.value : 0, 10) || 0;
+          if (emomCompletadosVal > emomTotalesVal) emomCompletadosVal = emomTotalesVal;
+          const minFaltantes = Math.max(0, emomTotalesVal - emomCompletadosVal);
+          // Fórmula EMOM: Valor_Columna_X = Minutos_Completados + (Minutos_Faltantes / 1000)
+          scoreRepsVal = (emomCompletadosVal + (minFaltantes / 1000)).toFixed(3);
+          rondasVal = emomCompletadosVal;
+          extraVal = minFaltantes;
+        } else if (isAmrap) {
+          rondasVal = parseInt(wodRoundsCompleted ? wodRoundsCompleted.value : 0, 10) || 0;
+          extraVal = parseInt(wodExtraReps ? wodExtraReps.value : 0, 10) || 0;
+          // Fórmula AMRAP: Valor_Columna_X = Rondas_Completas + (Reps_Adicionales / 1000)
+          scoreRepsVal = (rondasVal + (extraVal / 1000)).toFixed(3);
+        } else {
+          // For Time
+          const isFinished = wodTimeCapFinished ? (wodTimeCapFinished.value === 'SI') : true;
+          rondasVal = parseInt(wodRoundsCompleted ? wodRoundsCompleted.value : 4, 10) || 0;
+          extraVal = isFinished ? 0 : (parseInt(wodExtraReps ? wodExtraReps.value : 0, 10) || 0);
+          // Fórmula For Time: Valor_Columna_X = Rondas_Completas + (Reps_Adicionales / 1000)
+          scoreRepsVal = (rondasVal + (extraVal / 1000)).toFixed(3);
+        }
 
         seriesVal = 0;
         repsVal = scoreRepsVal;
@@ -1363,6 +1529,8 @@ document.addEventListener('DOMContentLoaded', () => {
         scoreReps: scoreRepsVal,
         rondasCompletas: rondasVal,
         repsAdicionales: extraVal,
+        emomMinutosTotales: emomTotalesVal,
+        emomMinutosCompletados: emomCompletadosVal,
         pesoWod: pesoWodVal,
         rpe: document.getElementById('wodRpe').value,
         // Retrocompatibilidad
@@ -1392,7 +1560,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (category === 'Metcon / WOD') {
           if (wodDuration) wodDuration.value = '';
           if (wodExtraReps) wodExtraReps.value = '';
-          if (wodRoundsCompleted) wodRoundsCompleted.value = '3';
+          if (wodRoundsCompleted) wodRoundsCompleted.value = '4';
+          if (wodEmomTotalMinutes) wodEmomTotalMinutes.value = '16';
+          if (wodEmomCompletedMinutes) wodEmomCompletedMinutes.value = '16';
           if (wodCustomName) wodCustomName.value = '';
           updateMetconScorePreview();
         } else if (category === 'Cardio') {

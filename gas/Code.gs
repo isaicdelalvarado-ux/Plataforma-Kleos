@@ -209,14 +209,31 @@ function insertRegistroDiario(ss, data) {
     pesoWod = 0;
   } else if (esMetcon) {
     series = 0;
-    // Fórmula matemática estricta: Valor_Columna_X = Rondas_Completas + (Reps_Adicionales / 1000)
-    var rondas = Number(data.rondasCompletas !== undefined ? data.rondasCompletas : (data.scoreReps !== undefined ? data.scoreReps : 0));
-    var repsExtra = Number(data.repsAdicionales !== undefined ? data.repsAdicionales : 0);
-    if (data.scoreReps !== undefined && String(data.scoreReps).indexOf('.') !== -1) {
-      scoreReps = parseFloat(String(data.scoreReps).replace(',', '.'));
+    var tipoWod = (data.tipoWod || data.tipo_wod || "").toString().trim();
+    var isEmom = tipoWod.indexOf("EMOM") !== -1 || (data.emomMinutosTotales !== undefined && Number(data.emomMinutosTotales) > 0);
+
+    if (isEmom) {
+      var minTotales = Number(data.emomMinutosTotales !== undefined ? data.emomMinutosTotales : (data.minutosTotales || 0));
+      var minCompletados = Number(data.emomMinutosCompletados !== undefined ? data.emomMinutosCompletados : (data.minutosCompletados || 0));
+      if (minCompletados > minTotales && minTotales > 0) minCompletados = minTotales;
+      var minFaltantes = Math.max(0, minTotales - minCompletados);
+      // Regla Backend EMOM: Minutos_Completados + (Minutos_Faltantes / 1000)
+      if (data.scoreReps !== undefined && data.scoreReps !== "" && String(data.scoreReps).indexOf('.') !== -1) {
+        scoreReps = parseFloat(String(data.scoreReps).replace(',', '.'));
+      } else {
+        scoreReps = minCompletados + (minFaltantes / 1000);
+      }
     } else {
-      scoreReps = rondas + (repsExtra / 1000);
+      // Regla Backend For Time y AMRAP: Rondas_Completas + (Reps_Adicionales / 1000)
+      var rondas = Number(data.rondasCompletas !== undefined ? data.rondasCompletas : (data.scoreReps !== undefined ? data.scoreReps : 0));
+      var repsExtra = Number(data.repsAdicionales !== undefined ? data.repsAdicionales : 0);
+      if (data.scoreReps !== undefined && data.scoreReps !== "" && String(data.scoreReps).indexOf('.') !== -1) {
+        scoreReps = parseFloat(String(data.scoreReps).replace(',', '.'));
+      } else {
+        scoreReps = rondas + (repsExtra / 1000);
+      }
     }
+
     repsOrDistance = scoreReps;
     cargaKg = 0;
     rmKg = 0;
