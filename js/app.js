@@ -316,30 +316,30 @@ document.addEventListener('DOMContentLoaded', () => {
       if (groupEmomTotalMinutes) groupEmomTotalMinutes.style.display = 'none';
       if (groupEmomCompletedMinutes) groupEmomCompletedMinutes.style.display = 'none';
 
+      // Rondas Completadas SIEMPRE debe ser 100% editable por el atleta
+      if (wodRoundsCompleted) {
+        wodRoundsCompleted.readOnly = false;
+        wodRoundsCompleted.disabled = false;
+        wodRoundsCompleted.style.opacity = '1';
+        wodRoundsCompleted.style.cursor = 'text';
+      }
+
       const isNoTermino = wodTimeCapFinished && wodTimeCapFinished.value === 'NO';
 
       if (isNoTermino) {
-        // Si [NO]: Fija automáticamente las Rondas Completadas en 3 y muestra de forma obligatoria el campo numérico abierto: "Repeticiones adicionales"
-        if (wodRoundsCompleted) {
-          wodRoundsCompleted.value = 3;
-          wodRoundsCompleted.readOnly = true;
-          wodRoundsCompleted.style.opacity = '0.75';
-        }
+        // Si [NO]: Muestra de forma obligatoria el campo abierto de repeticiones adicionales
         if (groupExtraReps) groupExtraReps.style.display = 'block';
-      } else {
-        // Si [SÍ]: Bloquea el campo de Rondas en el número prescrito por la programación (Ej: 4) y OCULTA el campo de repeticiones adicionales
-        if (wodRoundsCompleted) {
-          if (!wodRoundsCompleted.value || wodRoundsCompleted.value === '3') {
-            wodRoundsCompleted.value = 4;
-          }
-          wodRoundsCompleted.readOnly = true;
-          wodRoundsCompleted.style.opacity = '0.85';
+        if (wodExtraReps) {
+          wodExtraReps.readOnly = false;
+          wodExtraReps.disabled = false;
         }
+      } else {
+        // Si [SÍ]: Oculta el campo de repeticiones adicionales
         if (groupExtraReps) groupExtraReps.style.display = 'none';
         if (wodExtraReps) wodExtraReps.value = '';
       }
 
-      let rondas = parseInt(wodRoundsCompleted ? wodRoundsCompleted.value : 4, 10);
+      let rondas = parseInt(wodRoundsCompleted ? wodRoundsCompleted.value : 0, 10);
       if (isNaN(rondas) || rondas < 0) rondas = 0;
 
       let extraReps = 0;
@@ -354,7 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (badgeScoreCalculado) {
         if (!isNoTermino) {
-          badgeScoreCalculado.textContent = `${scoreVal} (For Time: ${rondas} rondas completas invicto)`;
+          badgeScoreCalculado.textContent = `${scoreVal} (For Time: ${rondas} rondas completas)`;
         } else {
           badgeScoreCalculado.textContent = `${scoreVal} (For Time: ${rondas}R + ${extraReps} reps extras)`;
         }
@@ -370,16 +370,19 @@ document.addEventListener('DOMContentLoaded', () => {
       if (groupEmomCompletedMinutes) groupEmomCompletedMinutes.style.display = 'none';
 
       // Despliega de forma directa y abierta dos campos numéricos para el atleta:
-      // "Rondas Completadas" (Input entero libre, ej: 8)
-      // "Repeticiones Adicionales" (Input entero libre para la ronda que quedó a medias, ej: 15)
+      // "Rondas Completadas" (Input entero libre)
+      // "Repeticiones Adicionales" (Input entero libre)
       if (groupRoundsCompleted) groupRoundsCompleted.style.display = 'block';
       if (wodRoundsCompleted) {
         wodRoundsCompleted.readOnly = false;
+        wodRoundsCompleted.disabled = false;
         wodRoundsCompleted.style.opacity = '1';
+        wodRoundsCompleted.style.cursor = 'text';
       }
       if (groupExtraReps) groupExtraReps.style.display = 'block';
       if (wodExtraReps) {
         wodExtraReps.readOnly = false;
+        wodExtraReps.disabled = false;
       }
 
       let rondas = parseInt(wodRoundsCompleted ? wodRoundsCompleted.value : 0, 10);
@@ -410,13 +413,21 @@ document.addEventListener('DOMContentLoaded', () => {
       // "Minutos Completados con Éxito" (ej: 14)
       if (groupEmomTotalMinutes) groupEmomTotalMinutes.style.display = 'block';
       if (groupEmomCompletedMinutes) groupEmomCompletedMinutes.style.display = 'block';
+      if (wodEmomTotalMinutes) {
+        wodEmomTotalMinutes.readOnly = false;
+        wodEmomTotalMinutes.disabled = false;
+      }
+      if (wodEmomCompletedMinutes) {
+        wodEmomCompletedMinutes.readOnly = false;
+        wodEmomCompletedMinutes.disabled = false;
+      }
 
-      let minTotales = parseInt(wodEmomTotalMinutes ? wodEmomTotalMinutes.value : 16, 10);
+      let minTotales = parseInt(wodEmomTotalMinutes ? wodEmomTotalMinutes.value : 0, 10);
       if (isNaN(minTotales) || minTotales < 0) minTotales = 0;
 
       let minCompletados = parseInt(wodEmomCompletedMinutes ? wodEmomCompletedMinutes.value : 0, 10);
       if (isNaN(minCompletados) || minCompletados < 0) minCompletados = 0;
-      if (minCompletados > minTotales) minCompletados = minTotales;
+      if (minCompletados > minTotales && minTotales > 0) minCompletados = minTotales;
 
       let minFaltantes = Math.max(0, minTotales - minCompletados);
 
@@ -426,7 +437,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (badgeScoreCalculado) {
         if (minFaltantes === 0) {
-          badgeScoreCalculado.textContent = `${scoreVal} (EMOM: ${minCompletados}/${minTotales} min completado al 100%)`;
+          badgeScoreCalculado.textContent = `${scoreVal} (EMOM: ${minCompletados}/${minTotales} min al 100%)`;
         } else {
           badgeScoreCalculado.textContent = `${scoreVal} (EMOM: ${minCompletados}/${minTotales} min | Faltaron ${minFaltantes} min)`;
         }
@@ -469,10 +480,18 @@ document.addEventListener('DOMContentLoaded', () => {
   if (wodTimeCapFinished) {
     wodTimeCapFinished.addEventListener('change', () => {
       if (wodTimeCapFinished.value === 'NO') {
+        // Al seleccionar NO, sugerir 3 solo si estaba vacío o en 4
+        if (wodRoundsCompleted && (!wodRoundsCompleted.value || wodRoundsCompleted.value === '4')) {
+          wodRoundsCompleted.value = 3;
+        }
         if (wodExtraReps) {
           wodExtraReps.focus();
         }
       } else {
+        // Al seleccionar SÍ, sugerir 4 solo si estaba vacío o en 3
+        if (wodRoundsCompleted && (!wodRoundsCompleted.value || wodRoundsCompleted.value === '3')) {
+          wodRoundsCompleted.value = 4;
+        }
         if (wodExtraReps) {
           wodExtraReps.value = '';
         }
