@@ -27,9 +27,12 @@
   <!-- Tipografías de Google: Cinzel (Espíritu Griego Heroico) y Plus Jakarta Sans -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Cache control para forzar actualización instantánea en móviles de atletas -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   
-  <link rel="stylesheet" href="css/styles.css?v=2.1">
+  <link rel="stylesheet" href="css/styles.css?v=2.3.0">
 </head>
 <body>
   <!-- Fondo cinemático del Partenón con velo oscuro -->
@@ -354,6 +357,7 @@
                   <option value="Front Squat">Front Squat</option>
                   <option value="Deadlift">Deadlift</option>
                   <option value="Snatch">Snatch</option>
+                  <option value="Clean Squat">Clean Squat (Squat Clean)</option>
                   <option value="Clean & Jerk">Clean & Jerk</option>
                   <option value="Power Clean">Power Clean</option>
                   <option value="Power Snatch">Power Snatch</option>
@@ -434,24 +438,50 @@
 
             <!-- Columna W: TIEMPO / DURACIÓN (Para Metcon y Cardio) -->
             <div class="form-group" id="groupDuration" style="display: none;">
-              <label for="wodDuration" id="lblDuration">Columna W: Tiempo / Duración</label>
-              <input type="text" id="wodDuration" placeholder="Ej: 04:15 o 24:30">
+              <label for="wodDuration" id="lblDuration">Columna W: Tiempo / Duración (MM:SS) *Obligatorio*</label>
+              <input type="text" id="wodDuration" placeholder="Ej: 07:50 o 18:30 (Obligatorio)">
             </div>
 
-            <!-- Columna X: SCORE / REPS TOTALES (Para Metcon) -->
+            <!-- SELECTOR TIME CAP (Exclusivo Metcon / WOD) -->
+            <div class="form-group" id="groupTimeCap" style="display: none;">
+              <label for="wodTimeCapFinished">¿Terminó el WOD dentro del Time Cap?</label>
+              <select id="wodTimeCapFinished">
+                <option value="SI" selected>SÍ (Terminó completo)</option>
+                <option value="NO">NO (Alcanzó Time Cap)</option>
+              </select>
+            </div>
+
+            <!-- RONDAS COMPLETADAS -->
+            <div class="form-group" id="groupRoundsCompleted" style="display: none;">
+              <label for="wodRoundsCompleted" id="lblRoundsCompleted">Rondas Completadas</label>
+              <input type="number" id="wodRoundsCompleted" min="0" max="100" value="4" placeholder="Ej: 4">
+            </div>
+
+            <!-- REPETICIONES ADICIONALES (Visible solo si NO terminó el WOD) -->
+            <div class="form-group" id="groupExtraReps" style="display: none;">
+              <label for="wodExtraReps">Repeticiones adicionales</label>
+              <input type="number" id="wodExtraReps" min="0" max="999" placeholder="Ej: 15, 150 u 8">
+              <small class="helper-text" style="color: #38bdf8; font-size: 0.75rem; margin-top: 0.25rem; display: block;">
+                ⚡ Formato 3 decimales: Rondas + (Reps / 1000)
+              </small>
+            </div>
+
+            <!-- Columna X: SCORE / REPS TOTALES (Formato matemático 3 decimales) -->
             <div class="form-group" id="groupScoreReps" style="display: none;">
-              <label for="wodScoreReps">Columna X: Score / Reps Totales</label>
-              <input type="number" id="wodScoreReps" min="0" placeholder="Ej: 45 reps o rondas">
+              <div class="label-with-badge">
+                <label for="wodScoreReps">Columna X: Score / Reps (3 decimales)</label>
+                <span id="badgeScoreCalculado" class="badge" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);">3.000</span>
+              </div>
+              <input type="text" id="wodScoreReps" placeholder="Ej: 3.015 o 4.000" readonly style="background: rgba(15, 23, 42, 0.6); cursor: default;">
             </div>
 
-            <!-- Columna Y: PESO TRABAJADO WOD (kg) (EXCLUSIVO METCON / WOD) -->
+            <!-- Columna Y: PESO TRABAJADO WOD (kg) (Oculto por regla de base de datos) -->
             <div class="form-group" id="groupPesoWod" style="display: none;">
               <div class="label-with-badge">
                 <label for="wodPesoWod">Columna Y: Peso trabajado (kg)</label>
                 <span class="badge" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);">Metcon Load</span>
               </div>
               <input type="number" id="wodPesoWod" min="0" max="400" step="0.5" value="0" placeholder="Ej: 43 (0 si peso corporal)">
-              <small class="helper-text" style="color: #94a3b8; font-size: 0.75rem; margin-top: 0.25rem; display: block;">Registrado en Col Y sin alterar el tonelaje de fuerza pura.</small>
             </div>
 
             <!-- Columna G: Series / Intervalos -->
@@ -591,6 +621,6 @@
   <!-- TOAST NOTIFICATIONS -->
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="js/app.js?v=2.1.2"></script>
+  <script src="js/app.js?v=2.3.0"></script>
 </body>
 </html>

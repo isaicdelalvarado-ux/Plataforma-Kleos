@@ -68,6 +68,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const groupDuration = document.getElementById('groupDuration');
   const lblDuration = document.getElementById('lblDuration');
   const wodDuration = document.getElementById('wodDuration');
+  const groupTimeCap = document.getElementById('groupTimeCap');
+  const wodTimeCapFinished = document.getElementById('wodTimeCapFinished');
+  const groupRoundsCompleted = document.getElementById('groupRoundsCompleted');
+  const wodRoundsCompleted = document.getElementById('wodRoundsCompleted');
+  const groupExtraReps = document.getElementById('groupExtraReps');
+  const wodExtraReps = document.getElementById('wodExtraReps');
+  const badgeScoreCalculado = document.getElementById('badgeScoreCalculado');
   const groupScoreReps = document.getElementById('groupScoreReps');
   const wodScoreReps = document.getElementById('wodScoreReps');
   const groupPesoWod = document.getElementById('groupPesoWod');
@@ -116,6 +123,14 @@ document.addEventListener('DOMContentLoaded', () => {
       'Desde Tacos (Blocks)',
       'Power Clean & Split Jerk',
       'Power Clean & Push Jerk'
+    ],
+    'Clean Squat': [
+      'Estándar / Desde el Suelo',
+      'High Hang (Colgante Alto)',
+      'Low Hang (Colgante Bajo)',
+      'Desde Tacos (Blocks)',
+      'Pausa en Recepción',
+      'Power Clean (Potencia)'
     ],
     'Clean': [
       'Estándar / Desde el Suelo',
@@ -190,8 +205,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (clean.indexOf('power snatch') !== -1) return 'Power Snatch';
     if (clean.indexOf('snatch') !== -1) return 'Snatch';
     if (clean.indexOf('clean & jerk') !== -1 || clean.indexOf('clean and jerk') !== -1) return 'Clean & Jerk';
+    if (clean.indexOf('clean squat') !== -1 || clean.indexOf('squat clean') !== -1) return 'Clean Squat';
     if (clean.indexOf('power clean') !== -1) return 'Power Clean';
-    if (clean.indexOf('clean') !== -1 && clean.indexOf('jerk') === -1) return 'Clean';
+    if (clean.indexOf('clean') !== -1 && clean.indexOf('jerk') === -1) return 'Clean Squat';
     if (clean.indexOf('back squat') !== -1) return 'Back Squat';
     if (clean.indexOf('front squat') !== -1) return 'Front Squat';
     if (clean.indexOf('overhead squat') !== -1) return 'Overhead Squat';
@@ -237,6 +253,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (!vGroup || !vSelect) return;
 
+    const currentCat = wodCategory ? wodCategory.value : 'Fuerza';
+    if (currentCat !== 'Fuerza' && currentCat !== 'Levantamiento Olímpico') {
+      vGroup.style.display = 'none';
+      return;
+    }
+
     const rawExercise = (wodExercise.value || '').trim();
     const motherKey = getMotherExerciseKey(rawExercise);
 
@@ -262,6 +284,75 @@ document.addEventListener('DOMContentLoaded', () => {
       vSelect.innerHTML = '<option value="">-- Sin variantes para este ejercicio --</option>';
       vGroup.style.display = 'none';
     }
+  }
+
+  // =========================================================================
+  // GESTIÓN DE TIME CAP Y SCORE MATEMÁTICO DE 3 POSICIONES DECIMALES (COL X)
+  // Fórmula interna: Valor_Columna_X = Rondas_Completas + (Reps_Adicionales / 1000)
+  // =========================================================================
+  function updateMetconScorePreview() {
+    if (!wodScoreReps) return;
+
+    const isNoTermino = wodTimeCapFinished && wodTimeCapFinished.value === 'NO';
+
+    if (groupExtraReps) {
+      groupExtraReps.style.display = isNoTermino ? 'block' : 'none';
+    }
+
+    if (wodRoundsCompleted) {
+      if (isNoTermino) {
+        wodRoundsCompleted.value = 3;
+        wodRoundsCompleted.readOnly = true;
+        wodRoundsCompleted.style.opacity = '0.75';
+      } else {
+        wodRoundsCompleted.readOnly = false;
+        wodRoundsCompleted.style.opacity = '1';
+      }
+    }
+
+    let rondas = parseInt(wodRoundsCompleted ? wodRoundsCompleted.value : 3, 10);
+    if (isNaN(rondas) || rondas < 0) rondas = 0;
+
+    let extraReps = 0;
+    if (isNoTermino && wodExtraReps) {
+      extraReps = parseInt(wodExtraReps.value, 10);
+      if (isNaN(extraReps) || extraReps < 0) extraReps = 0;
+    }
+
+    // Formato matemático estricto de TRES (3) decimales
+    const scoreVal = (rondas + (extraReps / 1000)).toFixed(3);
+    wodScoreReps.value = scoreVal;
+
+    if (badgeScoreCalculado) {
+      if (!isNoTermino) {
+        badgeScoreCalculado.textContent = `${scoreVal} (${rondas} rondas completas)`;
+      } else {
+        badgeScoreCalculado.textContent = `${scoreVal} (${rondas}R + ${extraReps} reps)`;
+      }
+    }
+  }
+
+  if (wodTimeCapFinished) {
+    wodTimeCapFinished.addEventListener('change', () => {
+      if (wodTimeCapFinished.value === 'NO') {
+        if (wodExtraReps) {
+          wodExtraReps.focus();
+        }
+      } else {
+        if (wodExtraReps) {
+          wodExtraReps.value = '';
+        }
+      }
+      updateMetconScorePreview();
+    });
+  }
+
+  if (wodRoundsCompleted) {
+    wodRoundsCompleted.addEventListener('input', updateMetconScorePreview);
+  }
+
+  if (wodExtraReps) {
+    wodExtraReps.addEventListener('input', updateMetconScorePreview);
   }
 
   // Fechas predeterminadas
@@ -500,16 +591,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (athlete && rmDataStore[athlete]) {
       const athleteRms = rmDataStore[athlete];
-      if (athleteRms[exercise]) {
-        registeredRm = athleteRms[exercise];
-      } else if (athleteRms[motherKey]) {
-        registeredRm = athleteRms[motherKey];
-      } else {
-        const exKey = Object.keys(athleteRms).find(k =>
-          k.toLowerCase() === exercise.toLowerCase() ||
-          k.toLowerCase() === motherKey.toLowerCase()
-        );
-        if (exKey) registeredRm = athleteRms[exKey];
+      const lookupKeys = [exercise, motherKey];
+      if (motherKey === 'Clean Squat' || exercise === 'Clean Squat' || exercise.toLowerCase().indexOf('clean') !== -1) {
+        lookupKeys.push('Clean Squat', 'Squat Clean', 'Clean', 'Clean & Jerk');
+      }
+      for (const k of lookupKeys) {
+        if (k && athleteRms[k] !== undefined && athleteRms[k] !== null && athleteRms[k] !== '') {
+          const parsed = parseFloat(athleteRms[k]);
+          if (!isNaN(parsed) && parsed > 0) {
+            registeredRm = parsed;
+            break;
+          }
+        }
+      }
+      if (!registeredRm || isNaN(registeredRm) || registeredRm <= 0) {
+        const exKey = Object.keys(athleteRms).find(k => {
+          const lk = k.toLowerCase().trim();
+          if (lk === exercise.toLowerCase().trim() || lk === motherKey.toLowerCase().trim()) return true;
+          if (motherKey === 'Clean Squat' || exercise === 'Clean Squat') {
+            return lk === 'clean squat' || lk === 'squat clean' || lk === 'clean';
+          }
+          return false;
+        });
+        if (exKey && athleteRms[exKey]) {
+          registeredRm = parseFloat(athleteRms[exKey]);
+        }
       }
     }
 
@@ -548,7 +654,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateRpeOptions(category);
 
     if (category === 'Fuerza' || category === 'Levantamiento Olímpico') {
-      // 1. FUERZA / LEVANTAMIENTO
+      // 1. FUERZA / LEVANTAMIENTO OLÍMPICO (incluyendo Clean Squat, Snatch, Back Squat, Jerk, Peso Muerto)
       if (lblExercise) lblExercise.textContent = 'Columna E: Ejercicio';
       if (groupSeries) groupSeries.style.display = 'block';
       if (lblSeries) lblSeries.textContent = 'Columna G: Series';
@@ -566,13 +672,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (groupPesoWod) groupPesoWod.style.display = 'none';
       if (customWodGroup) customWodGroup.style.display = 'none';
 
-      if (lblRpe) lblRpe.textContent = 'Columna S: RPE de la Sesión (RIR / Barra Pesada)';
+      if (lblRpe) lblRpe.textContent = 'Columna S: RPE de la Sesión (Borg CR-10 / Barra Pesada)';
 
       lookupAndApply1RM(athlete, exercise, motherKey);
 
     } else if (category === 'Gimnásticos') {
-      // 2. GIMNÁSTICOS
-      if (lblExercise) lblExercise.textContent = 'Columna E: Ejercicio Gimnástico / Skill';
+      // 2. GIMNÁSTICOS (Skill / Peso Corporal)
+      if (lblExercise) lblExercise.textContent = 'Columna E: Ejercicio';
       if (groupSeries) groupSeries.style.display = 'block';
       if (lblSeries) lblSeries.textContent = 'Columna G: Series';
       if (groupReps) groupReps.style.display = 'block';
@@ -592,9 +698,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (groupPesoWod) groupPesoWod.style.display = 'none';
       if (customWodGroup) customWodGroup.style.display = 'none';
 
-      if (lblRpe) lblRpe.textContent = 'Columna S: RPE (Control Motor & Técnico)';
+      if (lblRpe) lblRpe.textContent = 'Columna S: RPE de la Sesión (Borg CR-10)';
       if (rmStatusBadge) {
-        rmStatusBadge.textContent = '🤸 Gimnásticos (Carga = 0 kg)';
+        rmStatusBadge.textContent = '🤸 Gimnásticos (Carga = 0 kg | 1RM = 0)';
         rmStatusBadge.className = 'badge';
       }
 
@@ -603,15 +709,16 @@ document.addEventListener('DOMContentLoaded', () => {
       if (lblExercise) lblExercise.textContent = 'Columna E: Nombre del WOD';
       if (groupTipoWod) groupTipoWod.style.display = 'block';
       if (groupDuration) groupDuration.style.display = 'block';
-      if (lblDuration) lblDuration.textContent = 'Columna W: Tiempo / Duración (MM:SS)';
-      if (wodDuration) wodDuration.placeholder = 'Ej: 04:15 o 18:30';
+      if (lblDuration) lblDuration.textContent = 'Columna W: Tiempo / Duración (MM:SS) *Obligatorio*';
+      if (wodDuration) wodDuration.placeholder = 'Ej: 07:50 o 18:30 (Obligatorio)';
 
+      if (groupTimeCap) groupTimeCap.style.display = 'block';
+      if (groupRoundsCompleted) groupRoundsCompleted.style.display = 'block';
       if (groupScoreReps) groupScoreReps.style.display = 'block';
-      if (wodScoreReps) wodScoreReps.placeholder = 'Ej: 45 reps o rondas';
+      updateMetconScorePreview();
 
-      // REGLA CRÍTICA: Input "Peso trabajado (kg)" únicamente para Metcon / WOD
-      if (groupPesoWod) groupPesoWod.style.display = 'block';
-
+      // Ocultar peso WOD y componentes de fuerza pura
+      if (groupPesoWod) groupPesoWod.style.display = 'none';
       if (groupSeries) groupSeries.style.display = 'none';
       if (groupReps) groupReps.style.display = 'none';
       if (groupWeight) groupWeight.style.display = 'none';
@@ -624,22 +731,22 @@ document.addEventListener('DOMContentLoaded', () => {
         customWodGroup.style.display = (exercise === 'Metcon Personalizado') ? 'block' : 'none';
       }
 
-      if (lblRpe) lblRpe.textContent = 'Columna S: RPE de la Sesión (Borg Kleos Metabólico)';
+      if (lblRpe) lblRpe.textContent = 'Columna S: RPE de la Sesión (Borg CR-10: 1 al 10)';
       if (rmStatusBadge) {
-        rmStatusBadge.textContent = '⏱️ Metcon / WOD (Tonelaje Fuerza = 0)';
+        rmStatusBadge.textContent = '⏱️ Metcon / WOD (Score: Rondas + Reps/1000 | Tonelaje = 0)';
         rmStatusBadge.className = 'badge';
       }
 
     } else if (category === 'Cardio') {
-      // 4. CARDIO
+      // 4. CARDIO (Carrera Cero Máquinas)
       if (lblExercise) lblExercise.textContent = 'Columna E: Disciplina Cardio';
       if (groupSeries) groupSeries.style.display = 'block';
-      if (lblSeries) lblSeries.textContent = 'Columna G: Intervalos / Pasadas';
-      if (wodSeries && !wodSeries.value) wodSeries.value = 1;
+      if (lblSeries) lblSeries.textContent = 'Columna G: Intervalos / Series';
+      if (wodSeries && (!wodSeries.value || wodSeries.value === '0')) wodSeries.value = 1;
 
       if (groupReps) groupReps.style.display = 'block';
       if (lblRepsOrDistance) lblRepsOrDistance.textContent = 'Columna H: Distancia (km)';
-      if (wodReps) wodReps.placeholder = 'Ej: 5.000 (en km)';
+      if (wodReps) wodReps.placeholder = 'Ej: 5.000 (km)';
 
       if (groupDuration) groupDuration.style.display = 'block';
       if (lblDuration) lblDuration.textContent = 'Columna W: Tiempo Total (MM:SS)';
@@ -655,9 +762,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (groupPesoWod) groupPesoWod.style.display = 'none';
       if (customWodGroup) customWodGroup.style.display = 'none';
 
-      if (lblRpe) lblRpe.textContent = 'Columna S: RPE Metabólico (Borg CR-10)';
+      if (lblRpe) lblRpe.textContent = 'Columna S: RPE de la Sesión (Borg CR-10)';
       if (rmStatusBadge) {
-        rmStatusBadge.textContent = '🏃 Cardio Carrera (Carga = 0 kg)';
+        rmStatusBadge.textContent = '🏃 Cardio Carrera (Carga = 0 | 1RM = 0)';
         rmStatusBadge.className = 'badge';
       }
     } else {
@@ -677,8 +784,15 @@ document.addEventListener('DOMContentLoaded', () => {
       if (groupScoreReps) groupScoreReps.style.display = 'none';
       if (groupPesoWod) groupPesoWod.style.display = 'none';
       if (customWodGroup) customWodGroup.style.display = 'none';
-      if (lblRpe) lblRpe.textContent = 'Columna S: RPE de la Sesión';
+      if (lblRpe) lblRpe.textContent = 'Columna S: RPE de la Sesión (Borg CR-10)';
       lookupAndApply1RM(athlete, exercise, motherKey);
+    }
+
+    // Ocultar selectores de Time Cap y Rondas fuera de Metcon
+    if (category !== 'Metcon / WOD') {
+      if (groupTimeCap) groupTimeCap.style.display = 'none';
+      if (groupRoundsCompleted) groupRoundsCompleted.style.display = 'none';
+      if (groupExtraReps) groupExtraReps.style.display = 'none';
     }
   }
 
@@ -695,8 +809,8 @@ document.addEventListener('DOMContentLoaded', () => {
         wodExercise.value = 'Fran';
       }
     } else if (cat === 'Fuerza' || cat === 'Levantamiento Olímpico') {
-      if (['Back Squat', 'Front Squat', 'Deadlift', 'Snatch', 'Clean & Jerk', 'Power Clean', 'Power Snatch', 'Bench Press', 'Strict Press', 'Push Press', 'Overhead Squat', 'Thruster'].indexOf(wodExercise.value) === -1) {
-        wodExercise.value = 'Back Squat';
+      if (['Back Squat', 'Front Squat', 'Deadlift', 'Snatch', 'Clean Squat', 'Clean & Jerk', 'Power Clean', 'Power Snatch', 'Bench Press', 'Strict Press', 'Push Press', 'Overhead Squat', 'Thruster'].indexOf(wodExercise.value) === -1) {
+        wodExercise.value = cat === 'Levantamiento Olímpico' ? 'Clean Squat' : 'Back Squat';
       }
     }
     updateVariantOptions();
@@ -704,6 +818,24 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   wodExercise.addEventListener('change', () => {
+    const ex = wodExercise.value;
+    // Sincronización inteligente de categoría según ejercicio
+    if (['Clean Squat', 'Snatch', 'Clean & Jerk', 'Power Clean', 'Power Snatch'].indexOf(ex) !== -1) {
+      if (wodCategory.value !== 'Levantamiento Olímpico' && wodCategory.value !== 'Fuerza') {
+        wodCategory.value = 'Levantamiento Olímpico';
+      }
+    } else if (['Back Squat', 'Front Squat', 'Deadlift', 'Bench Press', 'Strict Press', 'Push Press', 'Overhead Squat', 'Thruster'].indexOf(ex) !== -1) {
+      if (wodCategory.value !== 'Fuerza' && wodCategory.value !== 'Levantamiento Olímpico') {
+        wodCategory.value = 'Fuerza';
+      }
+    } else if (['Carrera', 'Remo (Row)', 'SkiErg', 'Bicicleta / Echo Bike'].indexOf(ex) !== -1) {
+      wodCategory.value = 'Cardio';
+    } else if (['Fran', 'Cindy', 'Murph', 'Grace', 'Isabel', 'Helen', 'Diane', 'DT', 'Fight Gone Bad', 'Metcon Personalizado'].indexOf(ex) !== -1) {
+      wodCategory.value = 'Metcon / WOD';
+    } else if (['Pull Ups', 'Chest to Bar', 'Bar Muscle Ups', 'Ring Muscle Ups', 'Handstand Push Ups', 'Handstand Walk', 'Toes to Bar', 'Pistols', 'Rope Climb', 'Dips'].indexOf(ex) !== -1) {
+      wodCategory.value = 'Gimnásticos';
+    }
+
     if (customWodGroup) {
       customWodGroup.style.display = (wodExercise.value === 'Metcon Personalizado') ? 'block' : 'none';
     }
@@ -1140,6 +1272,9 @@ document.addEventListener('DOMContentLoaded', () => {
       let scoreRepsVal = 0;
       let pesoWodVal = 0;
 
+      let rondasVal = 0;
+      let extraVal = 0;
+
       if (category === 'Fuerza' || category === 'Levantamiento Olímpico') {
         const repsRaw = wodReps ? wodReps.value.trim() : '';
         if (!repsRaw) {
@@ -1170,21 +1305,28 @@ document.addEventListener('DOMContentLoaded', () => {
         pesoWodVal = 0;
       } else if (category === 'Metcon / WOD') {
         duracionVal = wodDuration ? wodDuration.value.trim() : '';
-        scoreRepsVal = wodScoreReps ? (parseInt(wodScoreReps.value, 10) || 0) : 0;
-        if (!duracionVal && !scoreRepsVal) {
-          showToast('⚠️ Por favor indica el Tiempo o el Score / Reps del WOD', 'error');
+        if (!duracionVal) {
+          showToast('⚠️ Por favor indica el Tiempo / Duración (MM:SS) del WOD (obligatorio)', 'error');
           if (wodDuration) wodDuration.focus();
           return;
         }
+
+        const isFinished = wodTimeCapFinished ? (wodTimeCapFinished.value === 'SI') : true;
+        rondasVal = parseInt(wodRoundsCompleted ? wodRoundsCompleted.value : 0, 10) || 0;
+        extraVal = isFinished ? 0 : (parseInt(wodExtraReps ? wodExtraReps.value : 0, 10) || 0);
+
+        // Fórmula matemática estricta: Valor_Columna_X = Rondas_Completas + (Reps_Adicionales / 1000)
+        scoreRepsVal = (rondasVal + (extraVal / 1000)).toFixed(3);
+
         seriesVal = 0;
         repsVal = scoreRepsVal;
-        pesoWodVal = wodPesoWod ? (parseFloat(wodPesoWod.value) || 0) : 0;
+        pesoWodVal = 0;
         weightVal = 0; // Se aísla el tonelaje de fuerza pura en 0
         rmVal = 0;
       } else if (category === 'Cardio') {
         const distRaw = wodReps ? wodReps.value.trim() : '';
         if (!distRaw) {
-          showToast('⚠️ Por favor indica la Distancia recorrida (ej: 5.0 km)', 'error');
+          showToast('⚠️ Por favor indica la Distancia recorrida en km (ej: 5.0)', 'error');
           if (wodReps) wodReps.focus();
           return;
         }
@@ -1219,6 +1361,8 @@ document.addEventListener('DOMContentLoaded', () => {
         distancia: distanciaVal,
         duracion: duracionVal,
         scoreReps: scoreRepsVal,
+        rondasCompletas: rondasVal,
+        repsAdicionales: extraVal,
         pesoWod: pesoWodVal,
         rpe: document.getElementById('wodRpe').value,
         // Retrocompatibilidad
@@ -1247,9 +1391,10 @@ document.addEventListener('DOMContentLoaded', () => {
           if (wodReps) wodReps.value = '';
         } else if (category === 'Metcon / WOD') {
           if (wodDuration) wodDuration.value = '';
-          if (wodScoreReps) wodScoreReps.value = '';
-          if (wodPesoWod) wodPesoWod.value = '0';
+          if (wodExtraReps) wodExtraReps.value = '';
+          if (wodRoundsCompleted) wodRoundsCompleted.value = '3';
           if (wodCustomName) wodCustomName.value = '';
+          updateMetconScorePreview();
         } else if (category === 'Cardio') {
           if (wodReps) wodReps.value = '';
           if (wodDuration) wodDuration.value = '';

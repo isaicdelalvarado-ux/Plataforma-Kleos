@@ -209,10 +209,18 @@ function insertRegistroDiario(ss, data) {
     pesoWod = 0;
   } else if (esMetcon) {
     series = 0;
-    repsOrDistance = scoreReps !== "" ? scoreReps : (data.reps !== undefined ? data.reps : "");
+    // Fórmula matemática estricta: Valor_Columna_X = Rondas_Completas + (Reps_Adicionales / 1000)
+    var rondas = Number(data.rondasCompletas !== undefined ? data.rondasCompletas : (data.scoreReps !== undefined ? data.scoreReps : 0));
+    var repsExtra = Number(data.repsAdicionales !== undefined ? data.repsAdicionales : 0);
+    if (data.scoreReps !== undefined && String(data.scoreReps).indexOf('.') !== -1) {
+      scoreReps = parseFloat(String(data.scoreReps).replace(',', '.'));
+    } else {
+      scoreReps = rondas + (repsExtra / 1000);
+    }
+    repsOrDistance = scoreReps;
     cargaKg = 0;
     rmKg = 0;
-    pesoWod = Number(data.pesoWod) || 0;
+    pesoWod = 0;
   } else if (esCardio) {
     series = Number(data.series !== undefined ? data.series : (data.intervals !== undefined ? data.intervals : 1));
     repsOrDistance = data.distancia !== undefined ? data.distancia : (data.repsOrDistance !== undefined ? data.repsOrDistance : "");
@@ -249,6 +257,9 @@ function insertRegistroDiario(ss, data) {
 
   // 3. Escribir Columnas W, X, Y (columnas 23, 24, 25)
   sheet.getRange(targetRow, 23, 1, 3).setValues([[duracion, scoreReps, pesoWod]]);
+  if (esMetcon && scoreReps !== "") {
+    sheet.getRange(targetRow, 24).setNumberFormat("0.000");
+  }
 
   // 4. AISLAMIENTO DE TONELAJE & AUTO-PROPAGACIÓN DE FÓRMULAS
   ensureRowFormulas(sheet, targetRow, categoria, {
@@ -496,9 +507,8 @@ function getRmData(ss) {
   if (colBHeader === "ejercicio" || colBHeader === "exercise") {
     // Formato A: [Atleta, Ejercicio, 1RM]
     for (var r = 1; r < values.length; r++) {
-      var atleta = (values[r][0] || "").toString().trim();
-      var ejercicio = (values[r][1] || "").toString().trim();
-      var peso = parseFloat(values[r][2]);
+      var rawPeso = values[r][2];
+      var peso = parseFloat(String(rawPeso).replace(',', '.'));
 
       if (atleta && ejercicio && !isNaN(peso)) {
         if (!rmMap[atleta]) rmMap[atleta] = {};
