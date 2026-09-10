@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-09-09 21:37:50",
+  "estado_general": "SALUDABLE",
+  "web_watchdog": {
+    "ok": true,
+    "endpoint_health": "HEALTHY",
+    "latency_sec": 4.025,
+    "clean_squat_in_api": true,
+    "clean_squat_in_local_code": true,
+    "readonly_trap_free": true,
+    "issues": []
+  },
+  "sheets_watchdog": {
+    "ok": true,
+    "total_registros_diario": 232,
+    "total_wellness": 52,
+    "total_rm_records": 75,
+    "repaired_formulas_rows": [],
+    "repaired_isolations_rows": [],
+    "issues": []
+  }
+}
