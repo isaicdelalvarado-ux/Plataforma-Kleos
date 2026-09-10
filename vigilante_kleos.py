@@ -179,6 +179,36 @@ def audit_and_heal_google_sheets():
         total_filas = len(col_a_vals)
         start_row = max(2, total_filas - 40)
 
+        # Auto-expansión inteligente del recuadro Tabla_1 para que cubra todas las filas y columnas A-Y (25 cols)
+        try:
+            meta = sh.fetch_sheet_metadata()
+            sheet_rd_meta = next((s for s in meta.get("sheets", []) if s.get("properties", {}).get("title") == "Registro_Diario"), None)
+            if sheet_rd_meta and sheet_rd_meta.get("bandedRanges"):
+                banded = sheet_rd_meta["bandedRanges"][0]
+                b_range = banded.get("range", {})
+                b_end_row = b_range.get("endRowIndex", 0)
+                b_end_col = b_range.get("endColumnIndex", 0)
+                if b_end_row < total_filas or b_end_col < 25:
+                    sh.batch_update({
+                        'requests': [{
+                            'updateBanding': {
+                                'bandedRange': {
+                                    'bandedRangeId': banded["bandedRangeId"],
+                                    'range': {
+                                        'sheetId': b_range.get("sheetId", 1548042606),
+                                        'startRowIndex': 0,
+                                        'endRowIndex': total_filas,
+                                        'startColumnIndex': 0,
+                                        'endColumnIndex': 25
+                                    }
+                                },
+                                'fields': 'range'
+                            }
+                        }]
+                    })
+        except Exception:
+            pass
+
         # 1 sola llamada API para todas las filas
         batch_rows = ws_reg.get(f"A{start_row}:Y{total_filas}")
 
