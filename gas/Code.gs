@@ -2,7 +2,7 @@
  * ============================================================================
  * PLATAFORMA KLEOS - GOOGLE APPS SCRIPT (CÓDIGO DEFINITIVO DE PRODUCCIÓN)
  * ============================================================================
- * Versión: 14.0.0 (Blindaje de Coordenadas y Aislamiento Estricto)
+ * Versión: 15.0.0 (Aceptación Universal de Nombres Metcon & Blindaje Total Col H=0, Col X=Score)
  * 
  * Reglas de Producción estrictas:
  * 1. Pestañas Activas:
@@ -21,7 +21,7 @@
  *    - B: Fecha (YYYY-MM-DD)
  *    - C: Mes (ej. Septiembre)
  *    - D: Semana (ej. Semana 36)
- *    - E: Ejercicio
+ *    - E: Ejercicio (Acepta CUALQUIER nombre de prueba o WOD sin filtros restrictivos)
  *    - F: Categoría
  *    - G: Series -> [0 en Metcon / WOD]
  *    - H: Reps / Distancia (km) -> [0 en Metcon / WOD | Distancia km decimal en Cardio]
@@ -183,17 +183,19 @@ function insertRegistroDiario(ss, data) {
   var duracion = (data.duracion !== undefined && data.duracion !== null) ? String(data.duracion).trim() : 
                  (data.duration !== undefined && data.duration !== null ? String(data.duration).trim() : "");
   var scoreReps = (data.scoreReps !== undefined && data.scoreReps !== "" && data.scoreReps !== null) ? Number(data.scoreReps) : "";
-  var pesoWod = (categoria === "Metcon / WOD" && data.pesoWod !== undefined && data.pesoWod !== "" && data.pesoWod !== null) ? Number(data.pesoWod) : 0;
+  var pesoWod = 0;
 
   var series = 0;
   var repsOrDistance = 0;  // AISLAMIENTO: valor neutro por defecto
   var cargaKg = 0;
   var rmKg = 0;
 
-  var esLifting = (categoria === "Fuerza" || categoria === "Levantamiento Olímpico");
-  var esGimnasticos = (categoria === "Gimnásticos");
-  var esMetcon = (categoria === "Metcon / WOD");
-  var esCardio = (categoria === "Cardio");
+  // Detección Universal de Categorías (Sin filtros por nombre exacto de ejercicio)
+  var catLower = categoria.toLowerCase();
+  var esLifting = (categoria === "Fuerza" || categoria === "Levantamiento Olímpico" || catLower.indexOf("fuerza") !== -1 || catLower.indexOf("olímpico") !== -1 || catLower.indexOf("olimpico") !== -1);
+  var esGimnasticos = (categoria === "Gimnásticos" || catLower.indexOf("gimnastic") !== -1);
+  var esMetcon = (categoria === "Metcon / WOD" || catLower.indexOf("metcon") !== -1 || catLower.indexOf("wod") !== -1 || (data.scoreReps !== undefined && data.scoreReps !== "" && Number(data.scoreReps) > 0));
+  var esCardio = (categoria === "Cardio" || catLower.indexOf("cardio") !== -1 || catLower.indexOf("carrera") !== -1);
 
   if (esLifting) {
     // --- FUERZA / LEVANTAMIENTO OLÍMPICO ---
@@ -217,12 +219,14 @@ function insertRegistroDiario(ss, data) {
 
   } else if (esMetcon) {
     // =========================================================================
-    // REGLA DE AISLAMIENTO OBLIGATORIA (VERSIÓN 14) — Metcon / WOD
+    // REGLA DE AISLAMIENTO UNIVERSAL (VERSIÓN 15) — Metcon / WOD
+    // Acepta CUALQUIER nombre de ejercicio/WOD (ej. 'Prueba', 'Fran', 'AMRAP', etc.)
     // Col G (Series)     <- FORZADO a 0
     // Col H (Reps)       <- BLOQUEADO OBLIGATORIAMENTE EN 0 (Cero absoluto)
     // Col I (Carga)      <- FORZADO a 0
     // Col J (1RM)        <- FORZADO a 0
-    // Col X (Score_Reps) <- INYECCIÓN EXACTA de valor numérico continuo con 3 decimales fijos (ej. 3.025)
+    // Col W (Duración)   <- Recibe la duración exacta (ej. '12:30')
+    // Col X (Score_Reps) <- Recibe el score exacto (ej. 3.025) a 3 decimales fijos
     // =========================================================================
     series = 0;          // Col G = 0 (aislamiento estricto)
     repsOrDistance = 0;  // Col H = 0 (CERO ABSOLUTO BLINDADO - el score NO va en Col H)
@@ -232,27 +236,21 @@ function insertRegistroDiario(ss, data) {
     var tipoWod = (data.tipoWod || data.tipo_wod || "").toString().trim();
     var isEmom = tipoWod.indexOf("EMOM") !== -1 || (data.emomMinutosTotales !== undefined && Number(data.emomMinutosTotales) > 0);
 
-    if (isEmom) {
+    // Si viene scoreReps directo en el payload, usarlo con máxima prioridad
+    if (data.scoreReps !== undefined && data.scoreReps !== "" && data.scoreReps !== null && !isNaN(Number(String(data.scoreReps).replace(',', '.')))) {
+      scoreReps = parseFloat(String(data.scoreReps).replace(',', '.'));
+    } else if (isEmom) {
       // Regla Backend EMOM: Minutos_Completados + (Minutos_Faltantes / 1000)
       var minTotales = Number(data.emomMinutosTotales !== undefined ? data.emomMinutosTotales : (data.minutosTotales || 0));
       var minCompletados = Number(data.emomMinutosCompletados !== undefined ? data.emomMinutosCompletados : (data.minutosCompletados || 0));
       if (minCompletados > minTotales && minTotales > 0) minCompletados = minTotales;
       var minFaltantes = Math.max(0, minTotales - minCompletados);
-      if (data.scoreReps !== undefined && data.scoreReps !== "" && data.scoreReps !== null && String(data.scoreReps).indexOf('.') !== -1) {
-        scoreReps = parseFloat(String(data.scoreReps).replace(',', '.'));
-      } else {
-        scoreReps = minCompletados + (minFaltantes / 1000);
-      }
+      scoreReps = minCompletados + (minFaltantes / 1000);
     } else {
       // Regla Backend For Time y AMRAP: Rondas_Completas + (Reps_Adicionales / 1000)
       var rondas = Number(data.rondasCompletas !== undefined ? data.rondasCompletas : 0);
       var repsExtra = Number(data.repsAdicionales !== undefined ? data.repsAdicionales : 0);
-      if (data.scoreReps !== undefined && data.scoreReps !== "" && data.scoreReps !== null && String(data.scoreReps).indexOf('.') !== -1) {
-        // Si el payload ya trae el valor decimal compuesto, usarlo directamente
-        scoreReps = parseFloat(String(data.scoreReps).replace(',', '.'));
-      } else {
-        scoreReps = rondas + (repsExtra / 1000);
-      }
+      scoreReps = rondas + (repsExtra / 1000);
     }
 
     // Garantizar valor numérico continuo con 3 decimales fijos (ej: 3.025)
@@ -462,14 +460,18 @@ function ensureRowFormulas(sheet, targetRow, categoria, opts) {
   categoria = (categoria || "").toString().trim();
   opts = opts || {};
 
-  var esNoFuerza = (categoria === "Metcon / WOD" || categoria === "Gimnásticos" || categoria === "Cardio");
+  var catLower = categoria.toLowerCase();
+  var esMetconCat = (categoria === "Metcon / WOD" || catLower.indexOf("metcon") !== -1 || catLower.indexOf("wod") !== -1);
+  var esCardioCat = (categoria === "Cardio" || catLower.indexOf("cardio") !== -1 || catLower.indexOf("carrera") !== -1);
+  var esGimnasticosCat = (categoria === "Gimnásticos" || catLower.indexOf("gimnastic") !== -1);
+  var esNoFuerza = (esMetconCat || esCardioCat || esGimnasticosCat);
 
   try {
     if (esNoFuerza) {
       var repsTotales = 0;
-      if (categoria === "Metcon / WOD") {
+      if (esMetconCat) {
         repsTotales = Number(opts.scoreReps) || (Number(opts.reps) || 0);
-      } else if (categoria === "Cardio") {
+      } else if (esCardioCat) {
         repsTotales = Number(opts.distancia) || (Number(opts.reps) || 0);
       } else {
         repsTotales = (Number(opts.series) || 0) * (Number(opts.reps) || 0);
