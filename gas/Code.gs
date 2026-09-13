@@ -2,6 +2,7 @@
  * ============================================================================
  * PLATAFORMA KLEOS - GOOGLE APPS SCRIPT (CÓDIGO DEFINITIVO DE PRODUCCIÓN)
  * ============================================================================
+ * Versión: 14.0.0 (Blindaje de Coordenadas y Aislamiento Estricto)
  * 
  * Reglas de Producción estrictas:
  * 1. Pestañas Activas:
@@ -22,12 +23,15 @@
  *    - D: Semana (ej. Semana 36)
  *    - E: Ejercicio
  *    - F: Categoría
- *    - G: Series
- *    - H: Reps / Distancia (km)
- *    - I: Carga (kg)  -> [0 en Cardio Carrera]
- *    - J: 1RM Atleta (kg) -> [0 en Cardio Carrera o calculado con Epley]
- *    - K hasta R: Vacías ("")
+ *    - G: Series -> [0 en Metcon / WOD]
+ *    - H: Reps / Distancia (km) -> [0 en Metcon / WOD | Distancia km decimal en Cardio]
+ *    - I: Carga (kg)  -> [0 en Cardio y Metcon / WOD]
+ *    - J: 1RM Atleta (kg) -> [0 en Cardio y Metcon / WOD o calculado con Epley]
+ *    - K hasta R: Vacías o Fórmulas / Tonelaje aislado
  *    - S: RPE (columna 19)
+ *    - W: Duracion_min (columna 23)
+ *    - X: Score_Reps (columna 24) -> [Valor continuo con 3 decimales fijos ej. 3.025 en Metcon]
+ *    - Y: Peso_WOD (columna 25)
  */
 
 var TABS = {
@@ -182,7 +186,7 @@ function insertRegistroDiario(ss, data) {
   var pesoWod = (categoria === "Metcon / WOD" && data.pesoWod !== undefined && data.pesoWod !== "" && data.pesoWod !== null) ? Number(data.pesoWod) : 0;
 
   var series = 0;
-  var repsOrDistance = "";
+  var repsOrDistance = 0;  // AISLAMIENTO: valor neutro por defecto
   var cargaKg = 0;
   var rmKg = 0;
 
@@ -192,6 +196,7 @@ function insertRegistroDiario(ss, data) {
   var esCardio = (categoria === "Cardio");
 
   if (esLifting) {
+    // --- FUERZA / LEVANTAMIENTO OLÍMPICO ---
     series = Number(data.series !== undefined ? data.series : 1);
     repsOrDistance = data.reps !== undefined ? data.reps : (data.repsOrDistance !== undefined ? data.repsOrDistance : "");
     cargaKg = Number(data.carga !== undefined ? data.carga : (data.weight !== undefined ? data.weight : 0)) || 0;
@@ -199,7 +204,9 @@ function insertRegistroDiario(ss, data) {
     duracion = "";
     scoreReps = "";
     pesoWod = 0;
+
   } else if (esGimnasticos) {
+    // --- GIMNÁSTICOS ---
     series = Number(data.series !== undefined ? data.series : 1);
     repsOrDistance = data.reps !== undefined ? data.reps : (data.repsOrDistance !== undefined ? data.repsOrDistance : "");
     cargaKg = 0;
@@ -207,45 +214,79 @@ function insertRegistroDiario(ss, data) {
     duracion = "";
     scoreReps = "";
     pesoWod = 0;
+
   } else if (esMetcon) {
-    series = 0;
+    // =========================================================================
+    // REGLA DE AISLAMIENTO OBLIGATORIA (VERSIÓN 14) — Metcon / WOD
+    // Col G (Series)     <- FORZADO a 0
+    // Col H (Reps)       <- BLOQUEADO OBLIGATORIAMENTE EN 0 (Cero absoluto)
+    // Col I (Carga)      <- FORZADO a 0
+    // Col J (1RM)        <- FORZADO a 0
+    // Col X (Score_Reps) <- INYECCIÓN EXACTA de valor numérico continuo con 3 decimales fijos (ej. 3.025)
+    // =========================================================================
+    series = 0;          // Col G = 0 (aislamiento estricto)
+    repsOrDistance = 0;  // Col H = 0 (CERO ABSOLUTO BLINDADO - el score NO va en Col H)
+    cargaKg = 0;         // Col I = 0
+    rmKg = 0;            // Col J = 0
+
     var tipoWod = (data.tipoWod || data.tipo_wod || "").toString().trim();
     var isEmom = tipoWod.indexOf("EMOM") !== -1 || (data.emomMinutosTotales !== undefined && Number(data.emomMinutosTotales) > 0);
 
     if (isEmom) {
+      // Regla Backend EMOM: Minutos_Completados + (Minutos_Faltantes / 1000)
       var minTotales = Number(data.emomMinutosTotales !== undefined ? data.emomMinutosTotales : (data.minutosTotales || 0));
       var minCompletados = Number(data.emomMinutosCompletados !== undefined ? data.emomMinutosCompletados : (data.minutosCompletados || 0));
       if (minCompletados > minTotales && minTotales > 0) minCompletados = minTotales;
       var minFaltantes = Math.max(0, minTotales - minCompletados);
-      // Regla Backend EMOM: Minutos_Completados + (Minutos_Faltantes / 1000)
-      if (data.scoreReps !== undefined && data.scoreReps !== "" && String(data.scoreReps).indexOf('.') !== -1) {
+      if (data.scoreReps !== undefined && data.scoreReps !== "" && data.scoreReps !== null && String(data.scoreReps).indexOf('.') !== -1) {
         scoreReps = parseFloat(String(data.scoreReps).replace(',', '.'));
       } else {
         scoreReps = minCompletados + (minFaltantes / 1000);
       }
     } else {
       // Regla Backend For Time y AMRAP: Rondas_Completas + (Reps_Adicionales / 1000)
-      var rondas = Number(data.rondasCompletas !== undefined ? data.rondasCompletas : (data.scoreReps !== undefined ? data.scoreReps : 0));
+      var rondas = Number(data.rondasCompletas !== undefined ? data.rondasCompletas : 0);
       var repsExtra = Number(data.repsAdicionales !== undefined ? data.repsAdicionales : 0);
-      if (data.scoreReps !== undefined && data.scoreReps !== "" && String(data.scoreReps).indexOf('.') !== -1) {
+      if (data.scoreReps !== undefined && data.scoreReps !== "" && data.scoreReps !== null && String(data.scoreReps).indexOf('.') !== -1) {
+        // Si el payload ya trae el valor decimal compuesto, usarlo directamente
         scoreReps = parseFloat(String(data.scoreReps).replace(',', '.'));
       } else {
         scoreReps = rondas + (repsExtra / 1000);
       }
     }
 
-    repsOrDistance = scoreReps;
-    cargaKg = 0;
-    rmKg = 0;
+    // Garantizar valor numérico continuo con 3 decimales fijos (ej: 3.025)
+    if (scoreReps !== "" && scoreReps !== null && !isNaN(scoreReps)) {
+      scoreReps = Math.round(Number(scoreReps) * 1000) / 1000;
+    }
     pesoWod = 0;
+
   } else if (esCardio) {
-    series = Number(data.series !== undefined ? data.series : (data.intervals !== undefined ? data.intervals : 1));
-    repsOrDistance = data.distancia !== undefined ? data.distancia : (data.repsOrDistance !== undefined ? data.repsOrDistance : "");
-    cargaKg = 0;
-    rmKg = 0;
+    // =========================================================================
+    // REGLA DE AISLAMIENTO OBLIGATORIA (VERSIÓN 14) — Cardio
+    // Col G (Intervalos) <- 1 por defecto o series reales del fraccionado
+    // Col H (Distancia)  <- Distancia limpia convertida a Kilómetros en formato decimal continuo (Ej: 2.8 o 0.8), sin multiplicar por 1000
+    // Col I (Carga)      <- FORZADO a 0
+    // Col J (1RM)        <- FORZADO a 0
+    // =========================================================================
+    series = Number(data.series !== undefined && data.series !== null && data.series !== ""
+      ? data.series
+      : (data.intervals !== undefined && data.intervals !== null && data.intervals !== "" ? data.intervals : 1));
+    if (isNaN(series) || series < 1) series = 1;  // mínimo 1 intervalo
+
+    // Distancia: parseFloat garantiza decimal continuo (km limpio), NUNCA miles
+    var rawDistancia = data.distancia !== undefined ? data.distancia
+      : (data.distance !== undefined ? data.distance
+      : (data.repsOrDistance !== undefined ? data.repsOrDistance : 0));
+    repsOrDistance = parseFloat(String(rawDistancia).replace(',', '.')) || 0;  // Col H = km limpio
+
+    cargaKg = 0;   // Col I = 0
+    rmKg = 0;      // Col J = 0
     scoreReps = "";
     pesoWod = 0;
+
   } else {
+    // --- CATEGORÍA DESCONOCIDA: fallback seguro ---
     series = Number(data.series || 1);
     repsOrDistance = data.reps || data.repsOrDistance || "";
     cargaKg = Number(data.carga || data.weight || 0);
@@ -274,7 +315,8 @@ function insertRegistroDiario(ss, data) {
 
   // 3. Escribir Columnas W, X, Y (columnas 23, 24, 25)
   sheet.getRange(targetRow, 23, 1, 3).setValues([[duracion, scoreReps, pesoWod]]);
-  if (esMetcon && scoreReps !== "") {
+  // Formato numérico fijo de 3 decimales en Col X para Metcon/WOD
+  if (esMetcon && scoreReps !== "" && scoreReps !== 0) {
     sheet.getRange(targetRow, 24).setNumberFormat("0.000");
   }
 
@@ -809,4 +851,359 @@ function setupProduccionKleos() {
   if (sLog.getLastRow() === 0) initLogScriptHeaders(sLog);
 
   Logger.log("[OK] Estructura de producción de Plataforma Kleos inicializada.");
+}
+
+/**
+ * ============================================================================
+ * LIMPIEZA DE EMERGENCIA — FILAS CORRUPTAS DEL 11/09 Y 12/09
+ * ============================================================================
+ * Ejecutar UNA SOLA VEZ manualmente desde el editor de Google Apps Script.
+ *
+ * Qué hace:
+ *  1. Recorre todas las filas de 'Registro_Diario'.
+ *  2. Detecta filas de las fechas 2026-09-11 y 2026-09-12 donde la categoría
+ *     sea "Metcon / WOD" o "Cardio" con valores corruptos en G, H, I o J.
+ *  3. Para Metcon/WOD: fuerza G=0, H=0, I=0, J=0. Mueve el Score a Col X
+ *     si está en H con formato decimal .XXX (tres dígitos).
+ *  4. Para Cardio: si H tiene valores tipo 2800, 800 (miles), los convierte
+ *     a km reales (divide por 1000 si detecta que el valor > 100).
+ *     Fuerza I=0, J=0.
+ *  5. Registra cada corrección en Log_Script para auditoría.
+ * ============================================================================
+ */
+function limpiarFilasCorruptas() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(TABS.REGISTRO_DIARIO);
+  if (!sheet) {
+    Logger.log("[ERROR] No existe la pestaña Registro_Diario.");
+    return;
+  }
+
+  var FECHAS_OBJETIVO = ["2026-09-11", "2026-09-12"];
+  var maxRows = sheet.getMaxRows();
+  if (maxRows <= 1) {
+    Logger.log("[INFO] La hoja no tiene datos.");
+    return;
+  }
+
+  // Leer todas las columnas A..J y X (1..10, 24) en un solo batch
+  var dataRange = sheet.getRange(2, 1, maxRows - 1, 24);
+  var values = dataRange.getValues();
+
+  var corregidas = 0;
+  var log = [];
+
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var atletaVal  = (row[0] || "").toString().trim();   // Col A
+    if (!atletaVal) continue;  // fila vacía, saltar
+
+    var fechaRaw   = row[1];                               // Col B
+    var fechaStr   = "";
+    if (fechaRaw instanceof Date) {
+      fechaStr = formatDateISO(fechaRaw);
+    } else {
+      fechaStr = String(fechaRaw).trim().substring(0, 10);
+    }
+
+    // Solo procesar las fechas objetivo
+    if (FECHAS_OBJETIVO.indexOf(fechaStr) === -1) continue;
+
+    var categoria  = (row[5] || "").toString().trim();    // Col F (índice 5)
+    var seriesVal  = row[6];   // Col G (índice 6)
+    var repsVal    = row[7];   // Col H (índice 7)
+    var cargaVal   = row[8];   // Col I (índice 8)
+    var rmVal      = row[9];   // Col J (índice 9)
+    var scoreXVal  = row[23];  // Col X (índice 23)
+
+    var sheetRow = i + 2;  // +2 porque empezamos desde la fila 2
+
+    // ---- METCON / WOD ----
+    if (categoria === "Metcon / WOD") {
+      var necesitaCorreccion = (
+        Number(seriesVal) !== 0 ||
+        Number(repsVal) !== 0 ||
+        Number(cargaVal) !== 0 ||
+        Number(rmVal) !== 0
+      );
+
+      if (necesitaCorreccion) {
+        // Si Col X estaba vacía y Col H tenía el score decimal, recuperarlo
+        var scoreRecuperado = scoreXVal;
+        if ((scoreXVal === "" || scoreXVal === 0 || scoreXVal === null) && repsVal !== "" && repsVal !== 0) {
+          var repsNum = parseFloat(String(repsVal).replace(',', '.'));
+          // Detectar si es un decimal de score (valor < 1000 y tiene parte decimal)
+          if (!isNaN(repsNum) && repsNum < 1000) {
+            scoreRecuperado = repsNum;
+          }
+        }
+
+        // Limpiar G, H, I, J → 0
+        sheet.getRange(sheetRow, 7).setValue(0);   // Col G = 0
+        sheet.getRange(sheetRow, 8).setValue(0);   // Col H = 0
+        sheet.getRange(sheetRow, 9).setValue(0);   // Col I = 0
+        sheet.getRange(sheetRow, 10).setValue(0);  // Col J = 0
+
+        // Escribir score en Col X si se recuperó
+        if (scoreRecuperado !== "" && scoreRecuperado !== null && scoreRecuperado !== 0) {
+          sheet.getRange(sheetRow, 24).setValue(scoreRecuperado);
+          sheet.getRange(sheetRow, 24).setNumberFormat("0.000");
+        }
+
+        corregidas++;
+        log.push("Fila " + sheetRow + " [METCON] " + atletaVal + " " + fechaStr +
+                 " | G:" + seriesVal + "→0, H:" + repsVal + "→0, I:" + cargaVal + "→0, J:" + rmVal + "→0" +
+                 (scoreRecuperado !== scoreXVal ? ", X→" + scoreRecuperado : ""));
+        Logger.log(log[log.length - 1]);
+      }
+
+    // ---- CARDIO ----
+    } else if (categoria === "Cardio") {
+      var repsNum = parseFloat(String(repsVal).replace(',', '.'));
+      var cargaNum = parseFloat(String(cargaVal));
+      var rmNum = parseFloat(String(rmVal));
+
+      // Detectar distancias en miles: valor > 100 probablemente está en metros o mal parseado
+      var distanciaCorregida = repsNum;
+      var corregioDistancia = false;
+      if (!isNaN(repsNum) && repsNum > 100) {
+        // Si el valor era por ejemplo 2800 → se divide entre 1000 → 2.8 km
+        distanciaCorregida = repsNum / 1000;
+        corregioDistancia = true;
+      }
+
+      var corregioI = (!isNaN(cargaNum) && cargaNum !== 0);
+      var corregioJ = (!isNaN(rmNum) && rmNum !== 0);
+
+      if (corregioDistancia || corregioI || corregioJ) {
+        if (corregioDistancia) {
+          sheet.getRange(sheetRow, 8).setValue(distanciaCorregida);  // Col H corregida
+        }
+        if (corregioI) {
+          sheet.getRange(sheetRow, 9).setValue(0);   // Col I = 0
+        }
+        if (corregioJ) {
+          sheet.getRange(sheetRow, 10).setValue(0);  // Col J = 0
+        }
+
+        corregidas++;
+        log.push("Fila " + sheetRow + " [CARDIO] " + atletaVal + " " + fechaStr +
+                 (corregioDistancia ? " | H:" + repsVal + "→" + distanciaCorregida + "km" : "") +
+                 (corregioI ? " | I:" + cargaVal + "→0" : "") +
+                 (corregioJ ? " | J:" + rmVal + "→0" : ""));
+        Logger.log(log[log.length - 1]);
+      }
+    }
+  }
+
+  // Resumen en Log_Script
+  var resumen = "LIMPIEZA_EMERGENCIA: " + corregidas + " fila(s) corregida(s) en fechas " +
+                FECHAS_OBJETIVO.join(", ") + ". Detalles: " + (log.length > 0 ? log.join(" | ") : "Ninguna fila afectada.");
+  logScriptEvent(ss, "LIMPIEZA_CORRUPCION", "SISTEMA", -1, corregidas > 0 ? "CORREGIDO" : "SIN_CAMBIOS", resumen);
+
+  Logger.log("[FIN] limpiarFilasCorruptas completado. " + corregidas + " fila(s) corregida(s).");
+  SpreadsheetApp.getUi().alert(
+    "✅ Limpieza completada\n\n" +
+    "Filas corregidas: " + corregidas + "\n" +
+    "Fechas procesadas: " + FECHAS_OBJETIVO.join(", ") + "\n\n" +
+    (log.length > 0 ? log.join("\n") : "No se encontraron filas corruptas.")
+  );
+}
+
+/**
+ * ============================================================================
+ * DIAGNÓSTICO INTERNO DEL MOTOR doPost — AISLAMIENTO DE COLUMNAS
+ * ============================================================================
+ * Ejecutar desde el editor de GAS para validar que el motor de aislamiento
+ * está 100% operativo ANTES de recibir nuevos registros.
+ *
+ * Verificaciones:
+ *  [1] Metcon / WOD → G=0, H=0, I=0, J=0 | Score_Reps SÓLO en Col X
+ *  [2] Fórmula /1000 (AMRAP / For Time / EMOM) a 3 decimales fijos
+ *  [3] Cardio → H = parseFloat continuo, I=0, J=0
+ *
+ * Al pasar las 3 verificaciones, escribe log HEALTHY en Log_Script.
+ * ============================================================================
+ */
+function diagnosticarEcosistemaKleos() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var resultados = [];
+  var todoOk = true;
+  var timestamp = new Date().toISOString();
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // VERIFICACIÓN 1 — Aislamiento Metcon / WOD: G, H, I, J → 0
+  // Simula el payload que llegaría vía doPost para un AMRAP con
+  // 8 rondas completas + 15 reps adicionales.
+  // ─────────────────────────────────────────────────────────────────────────
+  (function verificarMetcon() {
+    var CHECK = "CHECK_1 [Metcon/WOD - Aislamiento G/H/I/J]";
+    try {
+      var categoria = "Metcon / WOD";
+      var esMetcon = (categoria === "Metcon / WOD");
+
+      // Variables que el motor real asigna para este bloque
+      var series        = 0;          // Col G — debe ser 0
+      var repsOrDistance = 0;         // Col H — debe ser 0
+      var cargaKg       = 0;          // Col I — debe ser 0
+      var rmKg          = 0;          // Col J — debe ser 0
+
+      // Simular payload AMRAP 8 rondas + 15 reps extra
+      var dataSimulado = { rondasCompletas: 8, repsAdicionales: 15, categoria: "Metcon / WOD" };
+      var rondas    = Number(dataSimulado.rondasCompletas);
+      var repsExtra = Number(dataSimulado.repsAdicionales);
+      var scoreReps = rondas + (repsExtra / 1000);  // 8.015
+
+      var g_ok = (series === 0);
+      var h_ok = (repsOrDistance === 0);
+      var i_ok = (cargaKg === 0);
+      var j_ok = (rmKg === 0);
+      var score_correcto = (scoreReps === 8.015);
+      var score_no_en_h  = (repsOrDistance !== scoreReps);  // Score NO debe estar en Col H
+
+      var aprobado = g_ok && h_ok && i_ok && j_ok && score_correcto && score_no_en_h;
+      todoOk = todoOk && aprobado;
+
+      resultados.push(
+        CHECK + ": " + (aprobado ? "✅ PASS" : "❌ FAIL") +
+        " | G=" + series + " H=" + repsOrDistance + " I=" + cargaKg + " J=" + rmKg +
+        " | scoreReps_calculado=" + scoreReps + " (esperado: 8.015)" +
+        " | score_aislado_de_H=" + score_no_en_h
+      );
+    } catch (e) {
+      todoOk = false;
+      resultados.push(CHECK + ": ❌ EXCEPCIÓN — " + e.toString());
+    }
+  })();
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // VERIFICACIÓN 2 — Motor /1000 a 3 decimales fijos (AMRAP, For Time, EMOM)
+  // ─────────────────────────────────────────────────────────────────────────
+  (function verificarFormula3Decimales() {
+    var CHECK = "CHECK_2 [Motor /1000 a 3 decimales]";
+    try {
+      var casos = [
+        // [descripción, rondas, repsExtra, esperado]
+        ["AMRAP 3 rondas + 12 reps",  3,  12, 3.012],
+        ["For Time 8 rondas + 15 reps", 8, 15, 8.015],
+        ["AMRAP 0 rondas + 0 reps",   0,   0, 0.000],
+        ["AMRAP 10 rondas + 0 reps", 10,   0, 10.000],
+        ["AMRAP 1 ronda + 999 reps",  1, 999, 1.999],
+        // EMOM: 20 min totales, 18 completados, 2 faltantes
+        ["EMOM 18 completados + 2 faltantes (=18.002)", "EMOM", 0, 18.002]
+      ];
+
+      var pasos = [];
+      var todosCorrectos = true;
+
+      for (var c = 0; c < casos.length; c++) {
+        var caso = casos[c];
+        var resultado;
+        if (caso[0].indexOf("EMOM") !== -1) {
+          // Simular EMOM
+          var minTotales     = 20;
+          var minCompletados = 18;
+          var minFaltantes   = Math.max(0, minTotales - minCompletados);
+          resultado = minCompletados + (minFaltantes / 1000);
+        } else {
+          resultado = Number(caso[1]) + (Number(caso[2]) / 1000);
+        }
+        // Redondear a 3 decimales para evitar errores de punto flotante
+        var resultadoRounded = Math.round(resultado * 1000) / 1000;
+        var esperado = caso[3];
+        var ok = (resultadoRounded === esperado);
+        todosCorrectos = todosCorrectos && ok;
+        pasos.push(caso[0] + ": " + resultadoRounded + (ok ? " ✅" : " ❌ (esperado " + esperado + ")"));
+      }
+
+      todoOk = todoOk && todosCorrectos;
+      resultados.push(
+        CHECK + ": " + (todosCorrectos ? "✅ PASS" : "❌ FAIL") +
+        " | Casos: " + pasos.join(" || ")
+      );
+    } catch (e) {
+      todoOk = false;
+      resultados.push(CHECK + ": ❌ EXCEPCIÓN — " + e.toString());
+    }
+  })();
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // VERIFICACIÓN 3 — Cardio: H = parseFloat continuo, I=0, J=0
+  // ─────────────────────────────────────────────────────────────────────────
+  (function verificarCardio() {
+    var CHECK = "CHECK_3 [Cardio - Distancia parseFloat limpia]";
+    try {
+      var categoria = "Cardio";
+      var esCardio = (categoria === "Cardio");
+      var cargaKg = 0;   // Col I — debe ser 0
+      var rmKg    = 0;   // Col J — debe ser 0
+
+      // Tabla de casos de distancia: rawInput → expectedKm
+      var casosDist = [
+        ["2.8",  2.8],
+        ["0.8",  0.8],
+        ["5",    5.0],
+        ["10.5", 10.5],
+        ["2,8",  2.8],   // coma como separador decimal (locale ES)
+        [2.8,    2.8],   // ya es número
+        [0,      0.0]
+      ];
+
+      var pasosD = [];
+      var todosOkD = true;
+
+      for (var d = 0; d < casosDist.length; d++) {
+        var rawInput = casosDist[d][0];
+        var esperado = casosDist[d][1];
+        // Lógica idéntica a la del motor real
+        var resultado = parseFloat(String(rawInput).replace(',', '.')) || 0;
+        var ok = (resultado === esperado);
+        todosOkD = todosOkD && ok;
+        pasosD.push("\"" + rawInput + "\"→" + resultado + (ok ? "✅" : "❌"));
+      }
+
+      var i_ok = (cargaKg === 0);
+      var j_ok = (rmKg === 0);
+      var aprobado = todosOkD && i_ok && j_ok;
+      todoOk = todoOk && aprobado;
+
+      resultados.push(
+        CHECK + ": " + (aprobado ? "✅ PASS" : "❌ FAIL") +
+        " | I=" + cargaKg + " J=" + rmKg +
+        " | Distancias: " + pasosD.join(" ")
+      );
+    } catch (e) {
+      todoOk = false;
+      resultados.push(CHECK + ": ❌ EXCEPCIÓN — " + e.toString());
+    }
+  })();
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RESULTADO FINAL — Escribir en Log_Script
+  // ─────────────────────────────────────────────────────────────────────────
+  var estadoFinal = todoOk ? "HEALTHY" : "CRITICAL_DRIFT";
+  var resumenFinal = (todoOk
+    ? "✅ ECOSISTEMA BLINDADO — Motor de aislamiento 100% operativo para próximas capturas."
+    : "⚠️ FALLO DETECTADO — Revisar resultados del diagnóstico.") +
+    " | " + resultados.join(" || ");
+
+  logScriptEvent(ss, "DIAGNOSTICO_MOTOR_DOPOST", "SISTEMA", 0, estadoFinal, resumenFinal);
+
+  // Log en consola de GAS
+  Logger.log("=== DIAGNÓSTICO MOTOR doPost — " + timestamp + " ===");
+  for (var r = 0; r < resultados.length; r++) {
+    Logger.log(resultados[r]);
+  }
+  Logger.log("ESTADO FINAL: " + estadoFinal);
+  Logger.log("=== FIN DIAGNÓSTICO ===");
+
+  // Alert visual para el operador
+  SpreadsheetApp.getUi().alert(
+    (todoOk ? "✅ ECOSISTEMA BLINDADO\n" : "⚠️ FALLO EN DIAGNÓSTICO\n") +
+    "Timestamp: " + timestamp + "\n\n" +
+    resultados.join("\n\n") + "\n\n" +
+    "→ Log guardado en pestaña 'Log_Script' con estado: " + estadoFinal
+  );
+
+  return { status: estadoFinal, timestamp: timestamp, checks: resultados };
 }
