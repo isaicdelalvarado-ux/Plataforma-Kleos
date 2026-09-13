@@ -1504,7 +1504,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         seriesVal = 0;
-        repsVal = scoreRepsVal;
+        repsVal = 0; // OBLIGATORIO: Reps en Columna H debe ser CERO ABSOLUTO para Metcon
         pesoWodVal = 0;
         weightVal = 0; // Se aísla el tonelaje de fuerza pura en 0
         rmVal = 0;
@@ -1539,13 +1539,13 @@ document.addEventListener('DOMContentLoaded', () => {
         ejercicio: finalExercise,
         variante: variantVal,
         tipoWod: tipoWodVal,
-        series: seriesVal,
-        reps: repsVal,
+        series: (category === 'Metcon / WOD') ? 0 : seriesVal,
+        reps: (category === 'Metcon / WOD') ? 0 : repsVal,
         carga: weightVal,
         unRM: rmVal,
         distancia: distanciaVal,
         duracion: duracionVal,
-        scoreReps: scoreRepsVal,
+        scoreReps: (category === 'Metcon / WOD') ? parseFloat(scoreRepsVal) : 0,
         rondasCompletas: rondasVal,
         repsAdicionales: extraVal,
         emomMinutosTotales: emomTotalesVal,
@@ -1556,8 +1556,8 @@ document.addEventListener('DOMContentLoaded', () => {
         date: wodDateInput.value,
         category: category,
         exercise: finalExercise,
-        seriesOrIntervals: seriesVal,
-        repsOrDistance: category === 'Cardio' ? distanciaVal : (category === 'Metcon / WOD' ? scoreRepsVal : repsVal),
+        seriesOrIntervals: (category === 'Metcon / WOD') ? 0 : seriesVal,
+        repsOrDistance: category === 'Cardio' ? distanciaVal : ((category === 'Metcon / WOD') ? 0 : repsVal),
         weight: weightVal,
         oneRepMax: rmVal,
         duration: duracionVal
