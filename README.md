@@ -79,7 +79,7 @@ Plataforma web moderna y responsiva inspirada en la gloria atlética griega clá
    - Quién tiene acceso: **Cualquier usuario** (*Anyone*).
    - Haz clic en **Implementar** y copia la URL terminada en `/exec`.
 5. **Conexión en Producción**:
-   - La URL oficial definitiva de la nube (`https://script.google.com/macros/s/AKfycbwyoY9ISXFgW_BD37tg_PduuK72er45V8Wkj5r9hHcC5LbippoMya3T1Ux5azOJbpSh/exec`) ya está integrada por defecto en el frontend (`app.js`).
+   - La URL oficial definitiva de la nube (`https://script.google.com/macros/s/AKfycbzBrbeleVQHEDqLG3iiF7bsR7jxY8wGCYjWfJUmRU-YFv3H73ro2tnvW57HJw6n_qwEmw/exec`) ya está integrada por defecto en el frontend (`app.js`).
    - El selector de atletas se conecta automáticamente en vivo a Google Sheets desde cualquier dispositivo.
 
 ---

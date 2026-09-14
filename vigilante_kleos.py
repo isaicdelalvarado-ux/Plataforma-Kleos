@@ -46,7 +46,7 @@ if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 SPREADSHEET_ID = "1gUMRdWqGwnhJ4cEkt-lOKyYMiGNq2UawthVSdNf1b7o"
-SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwyoY9ISXFgW_BD37tg_PduuK72er45V8Wkj5r9hHcC5LbippoMya3T1Ux5azOJbpSh/exec"
+SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzBrbeleVQHEDqLG3iiF7bsR7jxY8wGCYjWfJUmRU-YFv3H73ro2tnvW57HJw6n_qwEmw/exec"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATUS_FILE = os.path.join(BASE_DIR, "estado_salud_kleos.json")
 LOG_FILE = os.path.join(BASE_DIR, "vigilante.log")

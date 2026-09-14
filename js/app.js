@@ -15,12 +15,16 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // URL Oficial del Web App en Google Cloud / Google Apps Script (Versión Definitiva 24/7 - Alta Concurrencia)
-  const OFFICIAL_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwyoY9ISXFgW_BD37tg_PduuK72er45V8Wkj5r9hHcC5LbippoMya3T1Ux5azOJbpSh/exec';
-  const OBSOLETE_HASH = 'AKfycbzvS6EK5kVhPDbJgePYMjUA9AM5npOdDYnau9Iu6MxZ7c-sRSJhClZbK3thRLr0JQZq8A';
+  const OFFICIAL_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzBrbeleVQHEDqLG3iiF7bsR7jxY8wGCYjWfJUmRU-YFv3H73ro2tnvW57HJw6n_qwEmw/exec';
+  const OBSOLETE_HASHES = [
+    'AKfycbzvS6EK5kVhPDbJgePYMjUA9AM5npOdDYnau9Iu6MxZ7c-sRSJhClZbK3thRLr0JQZq8A',
+    'AKfycbwyoY9ISXFgW_BD37tg_PduuK72er45V8Wkj5r9hHcC5LbippoMya3T1Ux5azOJbpSh'
+  ];
 
   let savedUrl = localStorage.getItem(STORAGE_KEYS.SCRIPT_URL);
-  // Auto-actualizar si no existe, apunta a entorno no válido o si el cliente tenía en caché la versión anterior
-  if (!savedUrl || !savedUrl.startsWith('https://script.google.com/') || savedUrl.indexOf(OBSOLETE_HASH) !== -1) {
+  // Auto-actualizar si no existe, apunta a entorno no válido o si el cliente tenía en caché una versión anterior
+  const isObsolete = !savedUrl || !savedUrl.startsWith('https://script.google.com/') || OBSOLETE_HASHES.some(h => savedUrl.indexOf(h) !== -1);
+  if (isObsolete || savedUrl !== OFFICIAL_SCRIPT_URL) {
     savedUrl = OFFICIAL_SCRIPT_URL;
     localStorage.setItem(STORAGE_KEYS.SCRIPT_URL, OFFICIAL_SCRIPT_URL);
   }

@@ -9,7 +9,7 @@ from datetime import datetime
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
-SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwyoY9ISXFgW_BD37tg_PduuK72er45V8Wkj5r9hHcC5LbippoMya3T1Ux5azOJbpSh/exec"
+SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzBrbeleVQHEDqLG3iiF7bsR7jxY8wGCYjWfJUmRU-YFv3H73ro2tnvW57HJw6n_qwEmw/exec"
 
 ATHLETES = [
     {"name": "Asdrubal", "exercise": "Snatch (High Hang)", "weight": 60, "rm": 60, "rpe": "9"},
