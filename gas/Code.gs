@@ -344,6 +344,20 @@ function insertWellness(ss, data) {
     initWellnessHeaders(sheet);
   }
 
+  // Asegurar existencia y cabeceras de columnas K (11) y L (12)
+  if (sheet.getMaxColumns() < 12) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), 12 - sheet.getMaxColumns());
+  }
+  var hK = sheet.getRange("K1").getValue();
+  var hL = sheet.getRange("L1").getValue();
+  if (!hK || !hL) {
+    sheet.getRange("K1:L1").setValues([["Zonas_Molestia", "Notas_Sensaciones"]]);
+    var rangeExt = sheet.getRange("K1:L1");
+    rangeExt.setFontWeight("bold");
+    rangeExt.setBackground("#0f172a");
+    rangeExt.setFontColor("#f8fafc");
+  }
+
   // Buscar la primera fila vacía real en Columna A
   var targetRow = getFirstEmptyRowByColumnA(sheet);
 
@@ -376,21 +390,33 @@ function insertWellness(ss, data) {
   // 9. Col J: Wellness Score real = Suma exacta de columnas B + C + D + E + F
   var wellnessScore = calidadSueno + nivelEnergia + dolorMuscular + nivelEstres + estadoAnimo;
 
-  // 10. Col A: Marca temporal
+  // 10. Col K: Zonas anatómicas con molestia (Detalle complementario)
+  var zonasMolestia = (data.sorenessAreas !== undefined && data.sorenessAreas !== null && String(data.sorenessAreas).trim() !== "")
+    ? String(data.sorenessAreas).trim()
+    : "Sin molestias";
+
+  // 11. Col L: Notas / Sensaciones de la Mañana
+  var notasSensaciones = (data.notes !== undefined && data.notes !== null)
+    ? String(data.notes).trim()
+    : ((data.wellnessNotes !== undefined && data.wellnessNotes !== null) ? String(data.wellnessNotes).trim() : "");
+
+  // 12. Col A: Marca temporal
   var marcaTemporal = data.timestamp || new Date();
 
-  // Escribir exactamente las 10 columnas (A hasta J) en la fila destino
+  // Escribir exactamente las 12 columnas (A hasta L) en la fila destino
   var colsWellness = [
-    marcaTemporal,   // Col A: Marca temporal
-    calidadSueno,    // Col B: Calidad del Sueño
-    nivelEnergia,    // Col C: Nivel de Energía (11 - fatiga)
-    dolorMuscular,   // Col D: Dolor Muscular
-    nivelEstres,     // Col E: Nivel de Estrés (6 - estrés)
-    estadoAnimo,     // Col F: Estado de Ánimo
-    horasSueno,      // Col G: Horas de Sueño
-    nombreAtleta,    // Col H: Nombre del Atleta
-    fechaStr,        // Col I: Fecha
-    wellnessScore    // Col J: Wellness Score (B + C + D + E + F)
+    marcaTemporal,    // Col A: Marca temporal
+    calidadSueno,     // Col B: Calidad del Sueño
+    nivelEnergia,     // Col C: Nivel de Energía (11 - fatiga)
+    dolorMuscular,    // Col D: Dolor Muscular
+    nivelEstres,      // Col E: Nivel de Estrés (6 - estrés)
+    estadoAnimo,      // Col F: Estado de Ánimo
+    horasSueno,       // Col G: Horas de Sueño
+    nombreAtleta,     // Col H: Nombre del Atleta
+    fechaStr,         // Col I: Fecha
+    wellnessScore,    // Col J: Wellness Score (B + C + D + E + F)
+    zonasMolestia,    // Col K: Zonas anatómicas con molestia
+    notasSensaciones  // Col L: Notas / Sensaciones de la Mañana
   ];
   sheet.getRange(targetRow, 1, 1, colsWellness.length).setValues([colsWellness]);
 
@@ -398,7 +424,7 @@ function insertWellness(ss, data) {
   ensureSingleCleanBottomRow(sheet, targetRow);
 
   // Telemetría de Monitoreo Proactivo en 'Log_Script'
-  logScriptEvent(ss, "INSERT_WELLNESS", nombreAtleta, targetRow, "SUCCESS", "Score: " + wellnessScore + " (Sueño:" + calidadSueno + ", Energía:" + nivelEnergia + ", Dolor:" + dolorMuscular + ", Estrés:" + nivelEstres + ", Ánimo:" + estadoAnimo + ")");
+  logScriptEvent(ss, "INSERT_WELLNESS", nombreAtleta, targetRow, "SUCCESS", "Score: " + wellnessScore + " (Sueño:" + calidadSueno + ", Energía:" + nivelEnergia + ", Dolor:" + dolorMuscular + ", Estrés:" + nivelEstres + ", Ánimo:" + estadoAnimo + ") | Zonas: " + zonasMolestia + " | Notas: " + notasSensaciones);
 }
 
 /**
@@ -619,7 +645,7 @@ function initRegistroDiarioHeaders(sheet) {
 }
 
 /**
- * Inicializa encabezados de 'Wellness' con las 10 columnas exactas de producción
+ * Inicializa encabezados de 'Wellness' con las 12 columnas de producción
  */
 function initWellnessHeaders(sheet) {
   var headers = [
@@ -632,7 +658,9 @@ function initWellnessHeaders(sheet) {
     "Horas de Sueño",
     "Nombre del Atleta",
     "Fecha",
-    "Wellness Score"
+    "Wellness Score",
+    "Zonas_Molestia",
+    "Notas_Sensaciones"
   ];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   var headerRange = sheet.getRange(1, 1, 1, headers.length);
