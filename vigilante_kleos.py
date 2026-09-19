@@ -221,22 +221,43 @@ def audit_and_heal_google_sheets():
             ejercicio = row_vals[4] if len(row_vals) > 4 else ""
             categoria = row_vals[5] if len(row_vals) > 5 else ""
 
-            # Verificar fórmulas en K, L, M, N (índices 10, 11, 12, 13)
+            # Verificar fórmulas en C, D (Mes, Semana), K-R (Fuerza), T, U (Fechas/IDs) y V
             has_formula_error = False
-            for col_idx in [10, 11, 12, 13]:
+            error_cols = []
+            for col_idx in [2, 3, 10, 11, 12, 13, 14, 15, 16, 17, 19, 20, 21]:
                 val = str(row_vals[col_idx]) if len(row_vals) > col_idx else ""
-                if any(err in val for err in ["#ERROR!", "#REF!", "#VALUE!", "#DIV/0!", "#NAME?"]):
+                if any(err in val for err in ["#ERROR!", "#REF!", "#VALUE!", "#DIV/0!", "#NAME?", "#N/A"]):
                     has_formula_error = True
+                    error_cols.append(col_idx + 1)
                     issues.append(f"Fila {r} [{atleta} - {ejercicio}]: Error de fórmula '{val}' en col {col_idx+1}")
 
             # Auto-reparar si se detectó error
             if has_formula_error:
                 try:
-                    f_k = f'=IF(J{r}>0; I{r}/J{r}; 0)'
-                    f_l = f'=IF(G{r}>0; G{r}*H{r}; 0)'
-                    f_m = f'=IF(AND(ISNUMBER(I{r}); I{r}>0); G{r}*H{r}*I{r}; 0)'
-                    f_n = f'=IF(F{r}="Cardio"; "Cardio"; IF(K{r}<0,7; "Descarga (<70%)"; IF(K{r}<=0,8; "Hipertrofia (70-80%)"; "Fuerza Máxima (>80%)")))'
-                    ws_reg.update(range_name=f"K{r}:N{r}", values=[[f_k, f_l, f_m, f_n]], value_input_option='USER_ENTERED')
+                    is_fuerza = categoria in ["Fuerza", "Levantamiento Olímpico"]
+                    if is_fuerza:
+                        f_k = f'=IF(J{r}>0; I{r}/J{r}; 0)'
+                        f_l = f'=IF(G{r}>0; G{r}*H{r}; 0)'
+                        f_m = f'=IF(AND(ISNUMBER(I{r}); I{r}>0); G{r}*H{r}*I{r}; 0)'
+                        f_n = f'=IF(F{r}="Cardio"; "Cardio"; IF(K{r}<0,7; "Descarga (<70%)"; IF(K{r}<=0,8; "Hipertrofia (70-80%)"; "Fuerza Máxima (>80%)")))'
+                        f_o = f'=IF(N{r}="Descarga (<70%)"; 1; 0)'
+                        f_p = f'=IF(N{r}="Hipertrofia (70-80%)"; 1; 0)'
+                        f_q = f'=IF(N{r}="Fuerza Máxima (>80%)"; 1; 0)'
+                        f_r = f'=IF(N{r}="Total Fuerza"; 1; 0)'
+                        ws_reg.update(range_name=f"K{r}:R{r}", values=[[f_k, f_l, f_m, f_n, f_o, f_p, f_q, f_r]], value_input_option='USER_ENTERED')
+                        f_v = f'=IF(J{r}>0; (I{r}/J{r})*100; 0)'
+                        ws_reg.update_acell(f"V{r}", f_v)
+                    else:
+                        # No fuerza: Aislamiento estricto de tonelaje
+                        reps_tot = row_vals[23] if categoria == "Metcon / WOD" and len(row_vals) > 23 and row_vals[23] != "" else (row_vals[7] if len(row_vals) > 7 else 0)
+                        vals_k_r = [0, reps_tot, 0, categoria, 0, 0, 0, 0]
+                        ws_reg.update(range_name=f"K{r}:R{r}", values=[vals_k_r], value_input_option='USER_ENTERED')
+                        ws_reg.update_acell(f"V{r}", 0)
+
+                    # Auto-reparar T y U (Fecha_Ordenada y Sesion_ID)
+                    f_t = f'=IF(ISBLANK(B{r}); ""; WEEKNUM(B{r}; 2))'
+                    f_u = f'=IF(ISBLANK(B{r}); ""; A{r}&"_"&TEXT(B{r}; "yyyy-mm-dd"))'
+                    ws_reg.update(range_name=f"T{r}:U{r}", values=[[f_t, f_u]], value_input_option='USER_ENTERED')
                     repaired_rows.append(r)
                 except Exception as rep_err:
                     issues.append(f"Fallo auto-reparación en fila {r}: {rep_err}")
