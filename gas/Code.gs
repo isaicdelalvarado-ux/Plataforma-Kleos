@@ -843,14 +843,23 @@ function insertRegistroDiario(ss, data) {
     cargaKg = Number(data.carga !== undefined ? data.carga : (data.weight !== undefined ? data.weight : 0)) || 0;
     rmKg = Number(data.unRM !== undefined ? data.unRM : (data.oneRepMax !== undefined ? data.oneRepMax : 0)) || 0;
 
-    // REGLA DE EQUIVALENCIA ABSOLUTA DE 1RM (MÓDULO 4): JERK, PUSH JERK Y SPLIT JERK
+    // REGLA DE EQUIVALENCIA ABSOLUTA DE 1RM: JERKS Y COMPLEX OLÍMPICOS
     var ejLower = ejercicio.toLowerCase();
     var isJerkMovement = (ejLower.indexOf("push jerk") !== -1 || ejLower.indexOf("split jerk") !== -1 || (ejLower.indexOf("jerk") !== -1 && ejLower.indexOf("clean & jerk") === -1 && ejLower.indexOf("clean and jerk") === -1));
-    if (rmKg === 0 || isJerkMovement) {
+    var isSnatchComplex = (ejLower.indexOf("snatch complex") !== -1);
+    var isCleanComplex = (ejLower.indexOf("clean complex") !== -1);
+
+    if (rmKg === 0 || isJerkMovement || isSnatchComplex || isCleanComplex) {
       try {
         var allRm = getRmData(ss);
         if (allRm && allRm[atleta]) {
-          if (isJerkMovement) {
+          if (isSnatchComplex) {
+            var scVal = allRm[atleta]["Snatch"] || allRm[atleta]["Snatch Complex"] || allRm[atleta]["Power Snatch"];
+            if (scVal && Number(scVal) > 0) rmKg = Number(scVal);
+          } else if (isCleanComplex) {
+            var ccVal = allRm[atleta]["Clean Squat"] || allRm[atleta]["Clean Complex"] || allRm[atleta]["Squat Clean"] || allRm[atleta]["Clean"] || allRm[atleta]["Clean & Jerk"] || allRm[atleta]["Power Clean"];
+            if (ccVal && Number(ccVal) > 0) rmKg = Number(ccVal);
+          } else if (isJerkMovement) {
             var jVal = allRm[atleta]["Jerk"] || allRm[atleta]["Push Jerk"] || allRm[atleta]["Split Jerk"];
             if (jVal && Number(jVal) > 0) rmKg = Number(jVal);
           } else if (rmKg === 0 && allRm[atleta][rawEjercicio]) {
@@ -1291,13 +1300,24 @@ function getRmData(ss) {
     }
   }
 
-  // REGLA DE EQUIVALENCIA ABSOLUTA DE 1RM (MÓDULO 4): JERK, PUSH JERK Y SPLIT JERK
+  // REGLA DE EQUIVALENCIA ABSOLUTA DE 1RM: JERKS Y COMPLEX OLÍMPICOS
   for (var ath in rmMap) {
+    // Puente Jerks
     var jVal = rmMap[ath]["Jerk"] || rmMap[ath]["Push Jerk"] || rmMap[ath]["Split Jerk"];
     if (jVal) {
       if (!rmMap[ath]["Jerk"]) rmMap[ath]["Jerk"] = jVal;
       if (!rmMap[ath]["Push Jerk"]) rmMap[ath]["Push Jerk"] = jVal;
       if (!rmMap[ath]["Split Jerk"]) rmMap[ath]["Split Jerk"] = jVal;
+    }
+    // Puente Snatch Complex -> Snatch
+    var sVal = rmMap[ath]["Snatch"] || rmMap[ath]["Snatch Complex"] || rmMap[ath]["Power Snatch"];
+    if (sVal) {
+      if (!rmMap[ath]["Snatch Complex"]) rmMap[ath]["Snatch Complex"] = sVal;
+    }
+    // Puente Clean Complex -> Clean Squat
+    var cVal = rmMap[ath]["Clean Squat"] || rmMap[ath]["Clean Complex"] || rmMap[ath]["Squat Clean"] || rmMap[ath]["Clean"] || rmMap[ath]["Clean & Jerk"];
+    if (cVal) {
+      if (!rmMap[ath]["Clean Complex"]) rmMap[ath]["Clean Complex"] = cVal;
     }
   }
 

@@ -159,6 +159,20 @@ document.addEventListener('DOMContentLoaded', () => {
       'Low Hang',
       'Desde Tacos (Blocks)'
     ],
+    'Snatch Complex': [
+      'Snatch + Overhead Squat',
+      'Power Snatch + Hang Snatch',
+      'Snatch + Hang Snatch + OHS',
+      'High Hang + Low Hang Snatch',
+      'Snatch Pull + Snatch'
+    ],
+    'Clean Complex': [
+      'Clean + Front Squat + Jerk',
+      'Power Clean + Hang Clean + Jerk',
+      'Clean + Jerk + Jerk',
+      'Clean Pull + Clean Squat',
+      'Hang Clean + Front Squat'
+    ],
     'Back Squat': [
       'Estándar (Completa)',
       'Pausa (3s en el Fondo)',
@@ -230,6 +244,8 @@ document.addEventListener('DOMContentLoaded', () => {
     for (const key of Object.keys(EXERCISE_VARIANTS)) {
       if (key.toLowerCase() === clean) return key;
     }
+    if (clean.indexOf('snatch complex') !== -1) return 'Snatch';
+    if (clean.indexOf('clean complex') !== -1) return 'Clean Squat';
     if (clean.indexOf('power snatch') !== -1) return 'Power Snatch';
     if (clean.indexOf('snatch') !== -1) return 'Snatch';
     if (clean.indexOf('clean & jerk') !== -1 || clean.indexOf('clean and jerk') !== -1) return 'Clean & Jerk';
@@ -785,8 +801,11 @@ document.addEventListener('DOMContentLoaded', () => {
           lookupKeys.push('Jerk', 'Push Jerk', 'Split Jerk');
         }
       }
-      if (motherKey === 'Clean Squat' || exercise === 'Clean Squat' || exercise.toLowerCase().indexOf('clean') !== -1) {
-        lookupKeys.push('Clean Squat', 'Squat Clean', 'Clean', 'Clean & Jerk');
+      if (motherKey === 'Snatch' || exercise === 'Snatch' || exercise === 'Snatch Complex' || exercise.toLowerCase().indexOf('snatch') !== -1) {
+        lookupKeys.push('Snatch', 'Snatch Complex', 'Power Snatch');
+      }
+      if (motherKey === 'Clean Squat' || exercise === 'Clean Squat' || exercise === 'Clean Complex' || exercise.toLowerCase().indexOf('clean') !== -1) {
+        lookupKeys.push('Clean Squat', 'Clean Complex', 'Squat Clean', 'Clean', 'Clean & Jerk', 'Power Clean');
       }
       for (const k of lookupKeys) {
         if (k && athleteRms[k] !== undefined && athleteRms[k] !== null && athleteRms[k] !== '') {
@@ -1004,12 +1023,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } else if (cat === 'Fuerza' || cat === 'Levantamiento Olímpico') {
       const allowedLifting = [
-        'Back Squat', 'Front Squat', 'Deadlift', 'Snatch', 'Clean Squat', 'Clean & Jerk',
-        'Power Clean', 'Power Snatch', 'Jerk', 'Push Jerk', 'Split Jerk',
+        'Back Squat', 'Front Squat', 'Deadlift', 'Snatch', 'Power Snatch', 'Snatch Complex',
+        'Clean Squat', 'Power Clean', 'Clean & Jerk', 'Clean Complex',
+        'Jerk', 'Push Jerk', 'Split Jerk',
         'Bench Press', 'Strict Press', 'Push Press', 'Overhead Squat', 'Thruster'
       ];
       if (allowedLifting.indexOf(wodExercise.value) === -1) {
-        wodExercise.value = cat === 'Levantamiento Olímpico' ? 'Jerk' : 'Back Squat';
+        wodExercise.value = cat === 'Levantamiento Olímpico' ? 'Snatch' : 'Back Squat';
       }
     }
     updateVariantOptions();
@@ -1019,7 +1039,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wodExercise.addEventListener('change', () => {
     const ex = wodExercise.value;
     // Sincronización inteligente de categoría según ejercicio
-    if (['Clean Squat', 'Snatch', 'Clean & Jerk', 'Power Clean', 'Power Snatch', 'Jerk', 'Push Jerk', 'Split Jerk'].indexOf(ex) !== -1) {
+    if (['Clean Squat', 'Snatch', 'Clean & Jerk', 'Power Clean', 'Power Snatch', 'Snatch Complex', 'Clean Complex', 'Jerk', 'Push Jerk', 'Split Jerk'].indexOf(ex) !== -1) {
       if (wodCategory.value !== 'Levantamiento Olímpico' && wodCategory.value !== 'Fuerza') {
         wodCategory.value = 'Levantamiento Olímpico';
       }
