@@ -1,19 +1,19 @@
 {
-  "timestamp": "2026-09-15 06:32:17",
+  "timestamp": "2026-10-27 06:52:04",
   "estado_general": "SALUDABLE",
   "web_watchdog": {
     "ok": true,
     "endpoint_health": "HEALTHY",
-    "latency_sec": 2.752,
-    "clean_squat_in_api": false,
+    "latency_sec": 5.121,
+    "clean_squat_in_api": true,
     "clean_squat_in_local_code": true,
     "readonly_trap_free": true,
     "issues": []
   },
   "sheets_watchdog": {
     "ok": true,
-    "total_registros_diario": 266,
-    "total_wellness": 73,
+    "total_registros_diario": 782,
+    "total_wellness": 230,
     "total_rm_records": 75,
     "repaired_formulas_rows": [],
     "repaired_isolations_rows": [],

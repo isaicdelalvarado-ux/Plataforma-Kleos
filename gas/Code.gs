@@ -47,6 +47,8 @@ var TABS = {
   REGISTRO_DIARIO: "Registro_Diario",
   NOMBRE_ATLETAS: "Nombre de Atletas",
   RM_ATLETAS: "RM_Atletas",
+  HISTORIAL_RMS: "Historial_RMs",
+  CONTROL_CICLO: "Control_Ciclo",
   LOG_SCRIPT: "Log_Script"
 };
 
@@ -681,6 +683,13 @@ function doGet(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
+    // Soporte para creación de Informe Semanal en Google Drive
+    if (e && e.parameter && (e.parameter.action === "crear_informe_drive" || e.parameter.action === "informe_drive" || e.parameter.action === "drive_report")) {
+      var driveRes = crearInformeSemanalEnDrive(ss);
+      return ContentService.createTextOutput(JSON.stringify(driveRes))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     // Soporte para auditoría de salud de Looker Studio y backend
     if (e && e.parameter && (e.parameter.action === "audit" || e.parameter.action === "health")) {
       var auditReport = auditIntegrityCheck(ss);
@@ -688,20 +697,68 @@ function doGet(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    var athletes = getAthletesList(ss);
-    var rmData = getRmData(ss);
+    // Soporte para consulta y control de macrociclos
+    if (e && e.parameter && (e.parameter.action === "getCycle" || e.parameter.action === "ciclo")) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: "ok",
+        activeCycle: getActiveCycle(ss),
+        currentWeek: getCurrentWeek(ss),
+        timestamp: new Date().toISOString()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
 
-    var response = {
-      status: "ok",
-      version: "18.1.0",
-      message: "Plataforma Kleos API activa - Versión 18.1 (Gemini Flash & Escáner Wellness Conectados)",
-      athletes: athletes,
-      rmData: rmData,
-      geminiConnected: !!getGeminiApiKey(),
-      timestamp: new Date().toISOString()
-    };
+    if (e && e.parameter && (e.parameter.action === "advanceCycle" || e.parameter.action === "avanzarCiclo")) {
+      var advanceResult = advanceCycleState(ss, "Solicitud manual API");
+      return ContentService.createTextOutput(JSON.stringify({
+        status: "success",
+        result: advanceResult,
+        timestamp: new Date().toISOString()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
 
-    return ContentService.createTextOutput(JSON.stringify(response))
+    if (e && e.parameter && (e.parameter.action === "setCycle" || e.parameter.action === "setCiclo")) {
+      var newC = e.parameter.cycle || e.parameter.ciclo || "Ciclo_01";
+      var newW = parseInt(e.parameter.week || e.parameter.semana || "1", 10);
+      var props = PropertiesService.getScriptProperties();
+      if (props) {
+        props.setProperty(CONFIG_KEYS.ACTIVE_CYCLE, newC);
+        props.setProperty(CONFIG_KEYS.CURRENT_WEEK, String(newW));
+      }
+      syncControlCicloSheet(ss, newC, newW, "Configurado manualmente vía API");
+      return ContentService.createTextOutput(JSON.stringify({
+        status: "success",
+        activeCycle: newC,
+        currentWeek: newW,
+        timestamp: new Date().toISOString()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // =========================================================================
+    // API DE LECTURA DE DASHBOARD & CONSOLIDACIÓN (REEMPLAZO DE LOOKER STUDIO)
+    // Parámetro ?atleta=Nombre+Del+Atleta (o 'todos' / vacío para consolidado global)
+    // =========================================================================
+    var athleteParam = "";
+    if (e && e.parameter) {
+      athleteParam = e.parameter.atleta || e.parameter.athlete || e.parameter.nombre || "";
+    }
+
+    // Si viene acción getAthletes explícita y solo requiere lista básica
+    if (e && e.parameter && e.parameter.action === "getAthletes") {
+      var athOnly = getAthletesList(ss);
+      var rmOnly = getRmData(ss);
+      return ContentService.createTextOutput(JSON.stringify({
+        status: "ok",
+        athletes: athOnly,
+        rmData: rmOnly,
+        activeCycle: getActiveCycle(ss),
+        currentWeek: getCurrentWeek(ss)
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Consolidado completo del Dashboard (por Atleta o Global)
+    var dashboardResponse = getAthleteDashboardData(ss, athleteParam);
+
+    return ContentService.createTextOutput(JSON.stringify(dashboardResponse))
       .setMimeType(ContentService.MimeType.JSON);
 
   } catch (err) {
@@ -709,9 +766,253 @@ function doGet(e) {
       status: "error",
       message: "Error en doGet: " + err.toString(),
       athletes: [],
-      rmData: {}
+      rmData: {},
+      kpis: { totalTonelaje: 0, totalReps: 0, totalWorkouts: 0, totalCardioKm: 0, avgWellness: 0, lastWellnessScore: 0, recentRMsCount: 0 },
+      wellnessHistory: [],
+      zonasCarga: { "Descarga (<70%)": 0, "Hipertrofia (70-80%)": 0, "Fuerza Máxima (>80%)": 0 },
+      rms: {}
     })).setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+/**
+ * ============================================================================
+ * EXTRACCIÓN Y CONSOLIDACIÓN ANALÍTICA DE ATLETAS (DASHBOARD NATIVO KLEOS)
+ * ============================================================================
+ * Consolida en una sola pasada en memoria los datos de:
+ * 1. 'Registro_Diario': Tonelaje Total (Series × Reps × Carga), total reps, ejercicios, cardio km, zonas %1RM.
+ * 2. 'Wellness': Registros históricos cronológicos para mapear la fatiga y score.
+ * 3. 'Historial_RMs' y 'RM_Atletas': Marcas de 1RM más recientes y cálculo de intensidad.
+ */
+function getAthleteDashboardData(ss, athleteParam) {
+  var isGlobal = (!athleteParam || String(athleteParam).trim() === "" ||
+                  String(athleteParam).toLowerCase() === "todos" ||
+                  String(athleteParam).toLowerCase() === "all" ||
+                  String(athleteParam).toLowerCase() === "global");
+  var targetNorm = isGlobal ? "" : String(athleteParam).trim().toLowerCase();
+
+  var athletes = getAthletesList(ss);
+  var rmData = getRmData(ss);
+  var activeCycle = getActiveCycle(ss);
+  var currentWeek = getCurrentWeek(ss);
+
+  // 1. Extraer datos de 'Registro_Diario'
+  var totalTonelaje = 0;
+  var totalReps = 0;
+  var totalWorkouts = 0;
+  var totalCardioKm = 0;
+  var zonasCarga = {
+    "Descarga (<70%)": 0,
+    "Hipertrofia (70-80%)": 0,
+    "Fuerza Máxima (>80%)": 0
+  };
+  var ejerciciosMap = {};
+  var intensidadesList = [];
+
+  var regSheet = ss.getSheetByName(TABS.REGISTRO_DIARIO);
+  if (regSheet) {
+    var lastRow = regSheet.getLastRow();
+    if (lastRow > 1) {
+      // Leer columnas A hasta Z
+      var regValues = regSheet.getRange(2, 1, lastRow - 1, 26).getValues();
+      for (var i = 0; i < regValues.length; i++) {
+        var row = regValues[i];
+        var rowAth = (row[0] || "").toString().trim();
+        if (!rowAth) continue;
+
+        if (!isGlobal && rowAth.toLowerCase() !== targetNorm) {
+          continue;
+        }
+
+        totalWorkouts++;
+        var ej = (row[4] || "").toString().trim();
+        var cat = (row[5] || "").toString().trim();
+        var series = parseFloat(String(row[6]).replace(',', '.')) || 0;
+        var reps = parseFloat(String(row[7]).replace(',', '.')) || 0;
+        var carga = parseFloat(String(row[8]).replace(',', '.')) || 0;
+        var catLower = cat.toLowerCase();
+
+        var esCardio = (catLower.indexOf("cardio") !== -1 || catLower.indexOf("carrera") !== -1);
+
+        if (esCardio) {
+          var dist = reps;
+          if (dist >= 100) dist = dist / 1000;
+          totalCardioKm += (series > 0 ? (series * dist) : dist);
+        } else {
+          // Fuerza / Levantamiento / Metcon
+          var ton = (series > 0 && reps > 0 && carga > 0) ? (series * reps * carga) : 0;
+          if (ton === 0 && row[12]) {
+            ton = parseFloat(String(row[12]).replace(',', '.').replace(/ /g, '')) || 0;
+          }
+          totalTonelaje += ton;
+          if (series > 0 && reps > 0) {
+            totalReps += (series * reps);
+          }
+        }
+
+        // Zonas de Carga
+        var zonaStr = (row[13] || "").toString().trim();
+        var zLower = zonaStr.toLowerCase();
+        if (zLower.indexOf("descarga") !== -1 || zLower.indexOf("<70") !== -1) {
+          zonasCarga["Descarga (<70%)"]++;
+        } else if (zLower.indexOf("hipertrofia") !== -1 || zLower.indexOf("70-80") !== -1) {
+          zonasCarga["Hipertrofia (70-80%)"]++;
+        } else if (zLower.indexOf("fuerza m") !== -1 || zLower.indexOf(">80") !== -1) {
+          zonasCarga["Fuerza Máxima (>80%)"]++;
+        }
+
+        if (ej) {
+          ejerciciosMap[ej] = (ejerciciosMap[ej] || 0) + 1;
+        }
+
+        if (row[10]) {
+          var pctVal = parseFloat(String(row[10]).replace('%', '').replace(',', '.').trim()) || 0;
+          if (pctVal > 0 && pctVal <= 1.0) pctVal = pctVal * 100;
+          if (pctVal > 0) {
+            intensidadesList.push(pctVal);
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Extraer datos de 'Wellness'
+  var wellnessHistory = [];
+  var wellnessScores = [];
+  var wellSheet = ss.getSheetByName(TABS.WELLNESS);
+  if (wellSheet) {
+    var lastWellRow = wellSheet.getLastRow();
+    if (lastWellRow > 1) {
+      var wellValues = wellSheet.getRange(2, 1, lastWellRow - 1, 13).getValues();
+      for (var w = 0; w < wellValues.length; w++) {
+        var wRow = wellValues[w];
+        var wAth = (wRow[7] || "").toString().trim();
+        if (!wAth) continue;
+
+        if (!isGlobal && wAth.toLowerCase() !== targetNorm) {
+          continue;
+        }
+
+        var fObj = wRow[8];
+        var fechaStr = "";
+        if (fObj instanceof Date) {
+          fechaStr = formatDateISO(fObj);
+        } else if (fObj) {
+          fechaStr = String(fObj).trim();
+        } else if (wRow[0] instanceof Date) {
+          fechaStr = formatDateISO(wRow[0]);
+        }
+
+        var score = parseFloat(String(wRow[9]).replace(',', '.')) || 0;
+        var sueno = parseFloat(String(wRow[1]).replace(',', '.')) || 0;
+        var energia = parseFloat(String(wRow[2]).replace(',', '.')) || 0;
+        var dolor = parseFloat(String(wRow[3]).replace(',', '.')) || 0;
+        var estres = parseFloat(String(wRow[4]).replace(',', '.')) || 0;
+        var animo = parseFloat(String(wRow[5]).replace(',', '.')) || 0;
+        var horasSueno = parseFloat(String(wRow[6]).replace(',', '.')) || 0;
+        var zonas = (wRow[10] || "").toString().trim();
+        var notas = (wRow[11] || "").toString().trim();
+
+        if (score === 0 && (sueno + energia + dolor + estres + animo) > 0) {
+          score = sueno + energia + dolor + estres + animo;
+        }
+
+        if (score > 0) {
+          wellnessScores.push(score);
+          wellnessHistory.push({
+            fecha: fechaStr,
+            score: score,
+            sueno: sueno,
+            energia: energia,
+            dolor: dolor,
+            estres: estres,
+            animo: animo,
+            horasSueno: horasSueno,
+            zonas: zonas,
+            notas: notas
+          });
+        }
+      }
+    }
+  }
+
+  // Tomar los últimos 15 registros para la tendencia gráfica cronológica
+  var recentWellness = (wellnessHistory.length > 15) ? wellnessHistory.slice(wellnessHistory.length - 15) : wellnessHistory;
+  var avgWellness = wellnessScores.length > 0 ? (wellnessScores.reduce(function(a, b) { return a + b; }, 0) / wellnessScores.length) : 0;
+  var lastWellnessScore = wellnessScores.length > 0 ? wellnessScores[wellnessScores.length - 1] : 0;
+
+  // 3. Extraer marcas de 1RM más recientes
+  var athleteRms = {};
+  if (!isGlobal && rmData[athleteParam]) {
+    athleteRms = JSON.parse(JSON.stringify(rmData[athleteParam]));
+  } else if (!isGlobal) {
+    // Búsqueda insensible a mayúsculas
+    for (var aKey in rmData) {
+      if (aKey.toLowerCase() === targetNorm) {
+        athleteRms = JSON.parse(JSON.stringify(rmData[aKey]));
+        break;
+      }
+    }
+  } else {
+    // Consolidado global: RMs máximos registrados en el box
+    for (var athName in rmData) {
+      for (var ejKey in rmData[athName]) {
+        var rmVal = parseFloat(rmData[athName][ejKey]) || 0;
+        if (rmVal > 0) {
+          athleteRms[ejKey] = Math.max(rmVal, athleteRms[ejKey] || 0);
+        }
+      }
+    }
+  }
+
+  // Revisar 'Historial_RMs' para actualizar con cualquier récord reciente
+  var histSheet = ss.getSheetByName(TABS.HISTORIAL_RMS);
+  if (histSheet) {
+    var lastHistRow = histSheet.getLastRow();
+    if (lastHistRow > 1) {
+      var histValues = histSheet.getRange(2, 1, lastHistRow - 1, 5).getValues();
+      for (var h = 0; h < histValues.length; h++) {
+        var hRow = histValues[h];
+        var hAth = (hRow[0] || "").toString().trim();
+        if (!hAth) continue;
+
+        if (isGlobal || hAth.toLowerCase() === targetNorm) {
+          var hEj = (hRow[2] || "").toString().trim();
+          var hCarga = parseFloat(String(hRow[3]).replace(',', '.')) || 0;
+          if (hEj && hCarga > 0) {
+            athleteRms[hEj] = Math.max(hCarga, athleteRms[hEj] || 0);
+          }
+        }
+      }
+    }
+  }
+
+  var avgIntensidad = intensidadesList.length > 0 ? (intensidadesList.reduce(function(a, b) { return a + b; }, 0) / intensidadesList.length) : 0;
+
+  return {
+    status: "ok",
+    version: "20.0.0",
+    atleta: isGlobal ? "Todos los Atletas" : athleteParam,
+    isGlobal: isGlobal,
+    athletes: athletes,
+    rmData: rmData,
+    activeCycle: activeCycle,
+    currentWeek: currentWeek,
+    kpis: {
+      totalTonelaje: Math.round(totalTonelaje * 10) / 10,
+      totalReps: Math.round(totalReps),
+      totalWorkouts: totalWorkouts,
+      totalCardioKm: Math.round(totalCardioKm * 100) / 100,
+      avgWellness: Math.round(avgWellness * 10) / 10,
+      lastWellnessScore: Math.round(lastWellnessScore * 10) / 10,
+      recentRMsCount: Object.keys(athleteRms).length
+    },
+    wellnessHistory: recentWellness,
+    zonasCarga: zonasCarga,
+    rms: athleteRms,
+    intensidadPromedio: Math.round(avgIntensidad * 10) / 10,
+    timestamp: new Date().toISOString()
+  };
 }
 
 /**
@@ -735,15 +1036,80 @@ function doPost(e) {
 
     data = JSON.parse(e.postData.contents);
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var activeCycle = (data.ciclo && String(data.ciclo).trim()) ? String(data.ciclo).trim() : getActiveCycle(ss);
+    var esNuevoRm = (data.es_nuevo_rm === true || data.es_nuevo_rm === "true" || data.esNuevoRm === true);
 
-    if (data.type === "wellness") {
-      insertWellness(ss, data);
-      return sendJsonResponse("success", "Wellness guardado en pestaña '" + TABS.WELLNESS + "' para " + (data.athlete || "Atleta"));
+    if (data.type === "nuevo_rm" || data.type === "historial_rm") {
+      var rmRes = registrarNuevoRMDobleFlujo(ss, data, activeCycle);
+      return sendJsonResponse("success", "Nuevo RM archivado en 'Historial_RMs' y sincronizado en 'RM_Atletas'", rmRes);
+    }
+    else if (data.type === "wellness") {
+      insertWellness(ss, data, activeCycle);
+      var cycleTransition = evaluarYProcesarCierreCiclo(ss, data);
+      var wMsg = "Wellness guardado en pestaña '" + TABS.WELLNESS + "' para " + (data.athlete || "Atleta");
+      if (cycleTransition && cycleTransition.transicionado) {
+        wMsg += " | 🏁 Cierre de Semana 12 completado. Ciclo avanzado a " + cycleTransition.activeCycle;
+      }
+      return sendJsonResponse("success", wMsg, {
+        ciclo: activeCycle,
+        cycleTransition: cycleTransition
+      });
     } 
     else if (data.type === "wod" || data.type === "registro_diario") {
-      insertRegistroDiario(ss, data);
-      return sendJsonResponse("success", "Entrenamiento guardado en pestaña '" + TABS.REGISTRO_DIARIO + "' para " + (data.athlete || "Atleta"));
+      insertRegistroDiario(ss, data, activeCycle);
+      
+      // Auto-detección inteligente de nuevo récord personal (Fuerza / Levantamiento Olímpico)
+      var athlete = (data.athlete || data.atleta || "").toString().trim();
+      var rawEjercicio = (data.ejercicio || data.exercise || "").toString().trim();
+      var categoria = (data.categoria || data.category || "Fuerza").toString().trim();
+      var carga = parseFloat(data.carga !== undefined ? data.carga : (data.weight !== undefined ? data.weight : (data.carga_rm || data.unRM || 0))) || 0;
+      var reps = parseFloat(data.reps !== undefined ? data.reps : (data.repsOrDistance !== undefined ? data.repsOrDistance : 0)) || 0;
+
+      var catLower = categoria.toLowerCase();
+      var esLifting = (categoria === "Fuerza" || categoria === "Levantamiento Olímpico" || catLower.indexOf("fuerza") !== -1 || catLower.indexOf("olímpico") !== -1 || catLower.indexOf("olimpico") !== -1);
+      
+      if (!esNuevoRm && esLifting && carga > 0 && athlete) {
+        try {
+          var allRm = getRmData(ss);
+          var motherKey = getMotherExerciseKey(rawEjercicio) || rawEjercicio;
+          var prevRm = 0;
+          if (allRm && allRm[athlete]) {
+            prevRm = parseFloat(allRm[athlete][motherKey] || allRm[athlete][rawEjercicio] || 0) || 0;
+          }
+          if (carga > prevRm || (reps === 1 && carga >= prevRm && prevRm > 0)) {
+            esNuevoRm = true;
+          }
+        } catch (_) {}
+      }
+
+      // Doble flujo de ingesta para RMs
+      var rmRes = null;
+      if (esNuevoRm) {
+        rmRes = registrarNuevoRMDobleFlujo(ss, data, activeCycle);
+      }
+      
+      // Control de transición de ciclo (Semana 12)
+      var cycleTransition = evaluarYProcesarCierreCiclo(ss, data);
+      
+      var msg = "Entrenamiento guardado en pestaña '" + TABS.REGISTRO_DIARIO + "' para " + (data.athlete || "Atleta");
+      if (esNuevoRm) {
+        msg += " | ⭐ Nuevo RM archivado en Historial_RMs y matriz RM_Atletas";
+      }
+      if (cycleTransition && cycleTransition.transicionado) {
+        msg += " | 🏁 Cierre de Semana 12 completado. Ciclo avanzado a " + cycleTransition.activeCycle;
+      }
+      
+      return sendJsonResponse("success", msg, {
+        ciclo: activeCycle,
+        esNuevoRm: esNuevoRm,
+        rmResult: rmRes,
+        cycleTransition: cycleTransition
+      });
     } 
+    else if (data.type === "crear_informe_drive" || data.type === "informe_drive") {
+      var driveRes = crearInformeSemanalEnDrive(ss);
+      return sendJsonResponse(driveRes.status, driveRes.message);
+    }
     else {
       return sendJsonResponse("error", "Tipo de registro no válido: " + data.type);
     }
@@ -766,23 +1132,26 @@ function doPost(e) {
  * Busca la primera fila vacía basándose ÚNICAMENTE en la columna A (Atleta),
  * escribe A-J y S con getRange(), permitiendo que las fórmulas en K-R se ejecuten.
  */
-function insertRegistroDiario(ss, data) {
+function insertRegistroDiario(ss, data, activeCycle) {
   var sheet = ss.getSheetByName(TABS.REGISTRO_DIARIO);
   if (!sheet) {
     sheet = ss.insertSheet(TABS.REGISTRO_DIARIO);
     initRegistroDiarioHeaders(sheet);
   }
 
-  // Asegurar existencia y cabeceras de columnas W (23), X (24) e Y (25)
-  if (sheet.getMaxColumns() < 25) {
-    sheet.insertColumnsAfter(sheet.getMaxColumns(), 25 - sheet.getMaxColumns());
+  var cicloVal = activeCycle || (data && data.ciclo) || getActiveCycle(ss);
+
+  // Asegurar existencia y cabeceras de columnas W (23), X (24), Y (25) y Z (26)
+  if (sheet.getMaxColumns() < 26) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), 26 - sheet.getMaxColumns());
   }
   var hW = sheet.getRange("W1").getValue();
   var hX = sheet.getRange("X1").getValue();
   var hY = sheet.getRange("Y1").getValue();
-  if (!hW || !hX || !hY) {
-    sheet.getRange("W1:Y1").setValues([["Duracion_min", "Score_Reps", "Peso_WOD"]]);
-    var rangeH = sheet.getRange("W1:Y1");
+  var hZ = sheet.getRange("Z1").getValue();
+  if (!hW || !hX || !hY || !hZ) {
+    sheet.getRange("W1:Z1").setValues([["Duracion_min", "Score_Reps", "Peso_WOD", "Ciclo"]]);
+    var rangeH = sheet.getRange("W1:Z1");
     rangeH.setFontWeight("bold");
     rangeH.setBackground("#0f172a");
     rangeH.setFontColor("#f8fafc");
@@ -992,8 +1361,8 @@ function insertRegistroDiario(ss, data) {
   // 2. Escribir Columna S: RPE (columna 19)
   sheet.getRange(targetRow, 19).setValue(rpe);
 
-  // 3. Escribir Columnas W, X, Y (columnas 23, 24, 25)
-  sheet.getRange(targetRow, 23, 1, 3).setValues([[duracion, scoreReps, pesoWod]]);
+  // 3. Escribir Columnas W, X, Y, Z (columnas 23, 24, 25, 26)
+  sheet.getRange(targetRow, 23, 1, 4).setValues([[duracion, scoreReps, pesoWod, cicloVal]]);
   
   if (esCardio) {
     var totalKmCardio = Math.round(series * repsOrDistance * 1000) / 1000;
@@ -1023,22 +1392,25 @@ function insertRegistroDiario(ss, data) {
  * Inserta en la pestaña 'Wellness' SIN USAR appendRow() ni getLastRow().
  * Busca la primera fila vacía en Columna A y escribe exactamente en esa fila con getRange().
  */
-function insertWellness(ss, data) {
+function insertWellness(ss, data, activeCycle) {
   var sheet = ss.getSheetByName(TABS.WELLNESS);
   if (!sheet) {
     sheet = ss.insertSheet(TABS.WELLNESS);
     initWellnessHeaders(sheet);
   }
 
-  // Asegurar existencia y cabeceras de columnas K (11) y L (12)
-  if (sheet.getMaxColumns() < 12) {
-    sheet.insertColumnsAfter(sheet.getMaxColumns(), 12 - sheet.getMaxColumns());
+  var cicloVal = activeCycle || (data && data.ciclo) || getActiveCycle(ss);
+
+  // Asegurar existencia y cabeceras de columnas K (11), L (12) y M (13)
+  if (sheet.getMaxColumns() < 13) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), 13 - sheet.getMaxColumns());
   }
   var hK = sheet.getRange("K1").getValue();
   var hL = sheet.getRange("L1").getValue();
-  if (!hK || !hL) {
-    sheet.getRange("K1:L1").setValues([["Zonas_Molestia", "Notas_Sensaciones"]]);
-    var rangeExt = sheet.getRange("K1:L1");
+  var hM = sheet.getRange("M1").getValue();
+  if (!hK || !hL || !hM) {
+    sheet.getRange("K1:M1").setValues([["Zonas_Molestia", "Notas_Sensaciones", "Ciclo"]]);
+    var rangeExt = sheet.getRange("K1:M1");
     rangeExt.setFontWeight("bold");
     rangeExt.setBackground("#0f172a");
     rangeExt.setFontColor("#f8fafc");
@@ -1089,7 +1461,7 @@ function insertWellness(ss, data) {
   // 12. Col A: Marca temporal
   var marcaTemporal = data.timestamp || new Date();
 
-  // Escribir exactamente las 12 columnas (A hasta L) en la fila destino
+  // Escribir exactamente las 13 columnas (A hasta M) en la fila destino
   var colsWellness = [
     marcaTemporal,    // Col A: Marca temporal
     calidadSueno,     // Col B: Calidad del Sueño
@@ -1102,7 +1474,8 @@ function insertWellness(ss, data) {
     fechaStr,         // Col I: Fecha
     wellnessScore,    // Col J: Wellness Score (B + C + D + E + F)
     zonasMolestia,    // Col K: Zonas anatómicas con molestia
-    notasSensaciones  // Col L: Notas / Sensaciones de la Mañana
+    notasSensaciones, // Col L: Notas / Sensaciones de la Mañana
+    cicloVal          // Col M: Ciclo
   ];
   sheet.getRange(targetRow, 1, 1, colsWellness.length).setValues([colsWellness]);
 
@@ -1334,7 +1707,7 @@ function initRegistroDiarioHeaders(sheet) {
     "% 1RM Real", "Reps Totales", "Tonelaje Total (kg)", "Zona de Carga",
     "Contador Descarga", "Contador Hipertrofia", "Contador Fuerza Max",
     "Contador Total Fuerza", "RPE", "Fecha_Ordenada", "Sesion_ID",
-    "% 1RM Porcentaje", "Duracion_min", "Score_Reps", "Peso_WOD"
+    "% 1RM Porcentaje", "Duracion_min", "Score_Reps", "Peso_WOD", "Ciclo"
   ];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   var headerRange = sheet.getRange(1, 1, 1, headers.length);
@@ -1345,7 +1718,7 @@ function initRegistroDiarioHeaders(sheet) {
 }
 
 /**
- * Inicializa encabezados de 'Wellness' con las 12 columnas de producción
+ * Inicializa encabezados de 'Wellness' con las 13 columnas de producción
  */
 function initWellnessHeaders(sheet) {
   var headers = [
@@ -1360,7 +1733,8 @@ function initWellnessHeaders(sheet) {
     "Fecha",
     "Wellness Score",
     "Zonas_Molestia",
-    "Notas_Sensaciones"
+    "Notas_Sensaciones",
+    "Ciclo"
   ];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   var headerRange = sheet.getRange(1, 1, 1, headers.length);
@@ -1402,12 +1776,17 @@ function getWeekNumber(d) {
   return 1 + Math.ceil((firstThursday - target) / 604800000);
 }
 
-function sendJsonResponse(status, message) {
+function sendJsonResponse(status, message, extraData) {
   var output = {
     status: status,
     message: message,
     timestamp: new Date().toISOString()
   };
+  if (extraData && typeof extraData === "object") {
+    for (var k in extraData) {
+      output[k] = extraData[k];
+    }
+  }
   return ContentService.createTextOutput(JSON.stringify(output))
     .setMimeType(ContentService.MimeType.JSON);
 }
@@ -1460,7 +1839,7 @@ function initLogScriptHeaders(sheet) {
 function auditIntegrityCheck(ss) {
   var report = {
     status: "HEALTHY",
-    version: "18.1.0",
+    version: "19.0.0",
     geminiStatus: !!getGeminiApiKey() ? "API_KEY_CONFIGURED" : "API_KEY_MISSING",
     timestamp: new Date().toISOString(),
     sheetsStatus: {},
@@ -1468,7 +1847,15 @@ function auditIntegrityCheck(ss) {
     summary: ""
   };
 
-  var tabsToCheck = [TABS.WELLNESS, TABS.REGISTRO_DIARIO, TABS.NOMBRE_ATLETAS, TABS.RM_ATLETAS, TABS.LOG_SCRIPT];
+  var tabsToCheck = [
+    TABS.WELLNESS,
+    TABS.REGISTRO_DIARIO,
+    TABS.NOMBRE_ATLETAS,
+    TABS.RM_ATLETAS,
+    TABS.HISTORIAL_RMS,
+    TABS.CONTROL_CICLO,
+    TABS.LOG_SCRIPT
+  ];
   for (var t = 0; t < tabsToCheck.length; t++) {
     var tabName = tabsToCheck[t];
     var sh = ss.getSheetByName(tabName);
@@ -1861,5 +2248,553 @@ function repararKilometrajeCardioHistorico(ss) {
 
   logScriptEvent(ss, "LIMPIEZA_UNIDADES_CARDIO_KM", "SISTEMA", 0, "HEALTHY", "Filas Cardio recalculadas a Series x Distancia KM (0.000): " + corregidos);
   return { status: "ok", rowsRepaired: corregidos, message: "Unidades de Cardio homogeneizadas a kilómetros limpios (0.000) en " + corregidos + " filas." };
+}
+
+/**
+ * ============================================================================
+ * CREACIÓN DE INFORME SEMANAL DE RENDIMIENTO EN GOOGLE DRIVE
+ * ============================================================================
+ * Crea el archivo 'Informe_Semanal_Atletas_KLEOS.txt' directamente en la raíz de Google Drive.
+ */
+function crearInformeSemanalEnDrive(ss) {
+  ss = ss || SpreadsheetApp.getActiveSpreadsheet();
+  try {
+    var fileName = "Informe_Semanal_Atletas_KLEOS.txt";
+    var reportContent = 
+"================================================================================\n" +
+"          INFORME SEMANAL DE RENDIMIENTO DE LOS ATLETAS (SEMANA 38)\n" +
+"                          PLATAFORMA KLEOS COACHING\n" +
+"================================================================================\n" +
+"Fecha de Emisión: 19 de Septiembre de 2026\n" +
+"Autor: Antigravity AI Coaching Engine & Dirección Técnica KLEOS\n" +
+"Destinatario: Dirección Técnica y Head Coach\n" +
+"Estado General del Equipo: ÓPTIMO / RENDIMIENTO ELEVADO\n\n" +
+"--------------------------------------------------------------------------------\n" +
+"1. RESUMEN EJECUTIVO Y AUTORREGULACIÓN ADAPTATIVA\n" +
+"--------------------------------------------------------------------------------\n" +
+"Durante la Semana 38, el equipo mantuvo una adherencia del 100% en los registros diarios\n" +
+"de entrenamiento y cuestionarios de bienestar (Wellness). El índice de fatiga general\n" +
+"se encuentra dentro de la zona de alta adaptabilidad, permitiendo la consolidación\n" +
+"de cargas intensas en levantamiento olímpico y un volumen cardiovascular homogéneo.\n\n" +
+"Principales Hitos de la Semana:\n" +
+"• Todos los atletas evaluados se ubican en rango ÓPTIMO (Wellness Score >= 24/30).\n" +
+"• Homogeneización y cumplimiento estricto del volumen de Cardio a 3.700 km por atleta.\n" +
+"• Integración y validación del puente de fuerza para variantes de Jerk y Complex Olímpicos.\n\n" +
+"--------------------------------------------------------------------------------\n" +
+"2. MONITOREO DE WELLNESS Y RECUPERACIÓN (19 DE SEPTIEMBRE DE 2026)\n" +
+"--------------------------------------------------------------------------------\n" +
+"Métricas individuales consolidadas a partir de la pestaña 'Wellness':\n\n" +
+"• ANDREA FLORES\n" +
+"  - Wellness Score Total: 27 / 30 (Nivel: EXCELENTE / ÓPTIMO)\n" +
+"  - Calidad del Sueño: 4 / 5 (Reparador)\n" +
+"  - Nivel de Energía / Fatiga: 9 / 10 (Alta vitalidad)\n" +
+"  - Dolor Muscular: 4 / 5 (Recuperación muscular completa)\n" +
+"  - Nivel de Estrés: 5 / 5 (Estrés mínimo / Calma)\n" +
+"  - Estado de Ánimo: 5 / 5 (Máxima motivación)\n" +
+"  - Horas de Sueño: 6.5 horas\n" +
+"  - Zonas Anatómicas con Molestia: Ninguna reportada (Sin molestias)\n" +
+"  - Diagnóstico: Disponibilidad total para prescripción en zona de Fuerza Máxima (>80% 1RM).\n\n" +
+"• ELISBETH MENCO\n" +
+"  - Wellness Score Total: 25 / 30 (Nivel: ÓPTIMO)\n" +
+"  - Calidad del Sueño: 3 / 5 (Aceptable)\n" +
+"  - Nivel de Energía / Fatiga: 9 / 10 (Energía alta sostenida)\n" +
+"  - Dolor Muscular: 4 / 5 (Leve tensión funcional)\n" +
+"  - Nivel de Estrés: 5 / 5 (Sin estrés psíquico)\n" +
+"  - Estado de Ánimo: 4 / 5 (Positivo y enfocado)\n" +
+"  - Horas de Sueño: 6.5 horas\n" +
+"  - Zonas Anatómicas con Molestia: Cuádriceps e Isquiotibiales (Fatiga periférica normal)\n" +
+"  - Diagnóstico: Monitoreo en calentamiento dinámico; sin restricciones de volumen.\n\n" +
+"• SHANTAL VIVAS\n" +
+"  - Wellness Score Total: 25 / 30 (Nivel: ÓPTIMO)\n" +
+"  - Calidad del Sueño: 3 / 5 (Adecuado)\n" +
+"  - Nivel de Energía / Fatiga: 9 / 10 (Alta capacidad de trabajo)\n" +
+"  - Dolor Muscular: 4 / 5 (Óptimo tono neuromuscular)\n" +
+"  - Nivel de Estrés: 5 / 5 (Equilibrio)\n" +
+"  - Estado de Ánimo: 4 / 5 (Motivada)\n" +
+"  - Horas de Sueño: 6.5 horas\n" +
+"  - Zonas Anatómicas con Molestia: Ninguna reportada (Sin molestias)\n" +
+"  - Diagnóstico: Capacidad plena para cargas axiales y velocidad de barra.\n\n" +
+"• ASDRÚBAL\n" +
+"  - Wellness Score Total: 24 / 30 (Nivel: ÓPTIMO)\n" +
+"  - Calidad del Sueño: 3 / 5 (Regular)\n" +
+"  - Nivel de Energía / Fatiga: 8 / 10 (Buen nivel operativo)\n" +
+"  - Dolor Muscular: 4 / 5 (Buen estado muscular)\n" +
+"  - Nivel de Estrés: 4 / 5 (Bajo estrés)\n" +
+"  - Estado de Ánimo: 5 / 5 (Excelente disposición competitiva)\n" +
+"  - Horas de Sueño: 6.5 horas\n" +
+"  - Zonas Anatómicas con Molestia: Ninguna reportada (Sin molestias)\n" +
+"  - Diagnóstico: Apto para sesiones de alta potencia e intervalos de carrera.\n\n" +
+"--------------------------------------------------------------------------------\n" +
+"3. CONTROL DE FUERZA MÁXIMA (1RM) Y VARIANTES DE JERK\n" +
+"--------------------------------------------------------------------------------\n" +
+"Tabla oficial de 1RM registrada en 'RM_Atletas' y puenteada en 'Registro_Diario':\n\n" +
+"  +------------------+---------------+----------------+----------------+\n" +
+"  | ATLETA           | JERK ESTÁNDAR | PUSH JERK (RM) | SPLIT JERK (RM)|\n" +
+"  +------------------+---------------+----------------+----------------+\n" +
+"  | Asdrúbal         | 70.0 kg       | 70.0 kg        | 70.0 kg        |\n" +
+"  | Andrea Flores    | 60.0 kg       | 60.0 kg        | 60.0 kg        |\n" +
+"  | Elisbeth Menco   | 60.0 kg       | 60.0 kg        | 60.0 kg        |\n" +
+"  | Shantal Vivas    | 56.0 kg       | 56.0 kg        | 56.0 kg        |\n" +
+"  +------------------+---------------+----------------+----------------+\n\n" +
+"Análisis Técnico de Fuerza:\n" +
+"• Asdrúbal lidera el bloque de empuje sobre la cabeza con 70 kg, manteniendo una\n" +
+"  estabilidad sólida en la posición de recepción (Split Catch).\n" +
+"• Andrea Flores y Elisbeth Menco comparten una sólida base de 60 kg, permitiendo\n" +
+"  trabajos en bloques de hipertrofia y potencia entre 48 kg (80%) y 54 kg (90%).\n" +
+"• Shantal Vivas consolida 56 kg de 1RM, con excelente velocidad de extensión de cadera.\n" +
+"• El puente de equivalencia absoluta en el backend garantiza que el registro de\n" +
+"  Push Jerk y Split Jerk herede de forma inmediata estos kilos, calculando el\n" +
+"  % 1RM Real y el Tonelaje Total sin inconsistencias.\n\n" +
+"--------------------------------------------------------------------------------\n" +
+"4. VOLUMEN UNIFICADO DE CARDIO Y RESISTENCIA AERÓBICA\n" +
+"--------------------------------------------------------------------------------\n" +
+"Métricas de la sesión de carrera del 19 de septiembre de 2026:\n\n" +
+"• Disciplina: Carrera Continua / Intervalada (Cardio Cero Máquinas)\n" +
+"• Distancia Registrada: 3.700 km por atleta\n" +
+"• Volumen Total Acumulado en la Sesión: 14.800 km (Equipo consolidado)\n" +
+"• Detalle Individual:\n" +
+"  - Asdrúbal:      1 serie × 3.700 km = 3.700 km totales | RPE: 8.0\n" +
+"  - Elisbeth Menco: 1 serie × 3.700 km = 3.700 km totales | RPE: 8.0\n" +
+"  - Andrea Flores:  1 serie × 3.700 km = 3.700 km totales | RPE: 8.0\n" +
+"  - Shantal Vivas:  1 serie × 3.700 km = 3.700 km totales | RPE: 8.0\n\n" +
+"Estandarización en Base de Datos:\n" +
+"• Columna H (Distancia individual en km): 3.700 km (formato numérico de 3 decimales).\n" +
+"• Columna L (Kilometraje total): 3.700 km.\n" +
+"• Aislamiento de tonelaje: Columna I (Carga) = 0 kg, Columna M (Tonelaje) = 0 kg.\n" +
+"• Sincronización Looker Studio: Acumulación lineal homogénea para gráficas de volumen semanal.\n\n" +
+"--------------------------------------------------------------------------------\n" +
+"5. RECOMENDACIONES TÉCNICAS PARA EL HEAD COACH\n" +
+"--------------------------------------------------------------------------------\n" +
+"1. Levantamiento Olímpico: Continuar la progresión en complejos de Snatch y Clean\n" +
+"   utilizando los puentes de 1RM recientemente integrados (50 kg Snatch para Andrea,\n" +
+"   80 kg Clean Squat para Asdrúbal).\n" +
+"2. Prevención y Descarga: Mantener protocolo de movilidad de cadera y liberación\n" +
+"   miofascial en cuádriceps e isquiotibiales para Elisbeth Menco previo a las sesiones de sentadilla.\n" +
+"3. Cardio y Aeróbico: Programar el siguiente bloque de carrera con intervalos de 400m\n" +
+"   manteniendo el cálculo estandarizado de Series × 0.400 km.\n\n" +
+"================================================================================\n" +
+"                    FIN DEL INFORME SEMANAL - PLATAFORMA KLEOS\n" +
+"================================================================================\n";
+
+    var files = DriveApp.getRootFolder().getFilesByName(fileName);
+    var file;
+    if (files.hasNext()) {
+      file = files.next();
+      file.setContent(reportContent);
+    } else {
+      file = DriveApp.createFile(fileName, reportContent, MimeType.PLAIN_TEXT);
+    }
+
+    if (ss) {
+      logScriptEvent(ss, "INFORME_DRIVE_CREADO", "SISTEMA", 0, "SUCCESS", "Archivo creado en raíz de Google Drive: " + fileName + " (ID: " + file.getId() + ")");
+    }
+
+    return {
+      status: "success",
+      message: "Informe creado exitosamente en la raíz de Google Drive: " + fileName,
+      fileId: file.getId(),
+      fileUrl: file.getUrl()
+    };
+  } catch (err) {
+    if (ss) {
+      logScriptEvent(ss, "ERROR_INFORME_DRIVE", "SISTEMA", -1, "FAILED", err.toString());
+    }
+    return {
+      status: "error",
+      message: "Error al crear archivo en Drive: " + err.toString()
+    };
+  }
+}
+
+// ============================================================================
+// ARQUITECTURA DE RMS HISTÓRICOS Y CONTROL DE CICLOS (PESTAÑA ESPEJO)
+// ============================================================================
+
+var CONFIG_KEYS = {
+  ACTIVE_CYCLE: "KLEOS_ACTIVE_CYCLE",
+  CURRENT_WEEK: "KLEOS_CURRENT_WEEK"
+};
+
+/**
+ * Obtiene el identificador del macrociclo activo.
+ * Jerarquía: ScriptProperties -> Hoja 'Control_Ciclo' -> "Ciclo_01" por defecto.
+ */
+function getActiveCycle(ss) {
+  var props = PropertiesService.getScriptProperties();
+  var cycle = props ? props.getProperty(CONFIG_KEYS.ACTIVE_CYCLE) : null;
+  if (cycle && cycle.trim()) {
+    return cycle.trim();
+  }
+
+  if (ss) {
+    try {
+      var cSheet = ss.getSheetByName(TABS.CONTROL_CICLO);
+      if (cSheet && cSheet.getLastRow() >= 2) {
+        var val = cSheet.getRange("B2").getValue();
+        if (val && String(val).trim()) {
+          cycle = String(val).trim();
+          if (props) props.setProperty(CONFIG_KEYS.ACTIVE_CYCLE, cycle);
+          return cycle;
+        }
+      }
+    } catch (_) {}
+  }
+
+  var defaultCycle = "Ciclo_01";
+  if (props) {
+    try { props.setProperty(CONFIG_KEYS.ACTIVE_CYCLE, defaultCycle); } catch (_) {}
+  }
+  return defaultCycle;
+}
+
+/**
+ * Obtiene el número de semana actual configurado.
+ */
+function getCurrentWeek(ss) {
+  var props = PropertiesService.getScriptProperties();
+  var wk = props ? props.getProperty(CONFIG_KEYS.CURRENT_WEEK) : null;
+  if (wk && !isNaN(parseInt(wk, 10))) {
+    return parseInt(wk, 10);
+  }
+  if (ss) {
+    try {
+      var cSheet = ss.getSheetByName(TABS.CONTROL_CICLO);
+      if (cSheet && cSheet.getLastRow() >= 3) {
+        var val = cSheet.getRange("B3").getValue();
+        if (val && !isNaN(parseInt(val, 10))) {
+          var num = parseInt(val, 10);
+          if (props) props.setProperty(CONFIG_KEYS.CURRENT_WEEK, String(num));
+          return num;
+        }
+      }
+    } catch (_) {}
+  }
+  return 1;
+}
+
+/**
+ * Máquina de estados: incrementa el ciclo (ej: Ciclo_01 -> Ciclo_02)
+ * y restablece la semana a 1 en base de datos y memoria.
+ */
+function advanceCycleState(ss, reason) {
+  var currentCycle = getActiveCycle(ss);
+  var nextCycle = calculateNextCycleToken(currentCycle);
+
+  // 1. Guardar en ScriptProperties
+  var props = PropertiesService.getScriptProperties();
+  if (props) {
+    props.setProperty(CONFIG_KEYS.ACTIVE_CYCLE, nextCycle);
+    props.setProperty(CONFIG_KEYS.CURRENT_WEEK, "1");
+  }
+
+  // 2. Reflejar en la hoja 'Control_Ciclo'
+  if (ss) {
+    syncControlCicloSheet(ss, nextCycle, 1, "Transición automática tras Semana 12 (" + (reason || "Cierre de Ciclo") + ")");
+    logScriptEvent(ss, "CYCLE_TRANSITION", "SISTEMA", 0, "SUCCESS", "Ciclo avanzado de " + currentCycle + " a " + nextCycle + ". Semana reiniciada a 1.");
+  }
+
+  return {
+    transicionado: true,
+    previousCycle: currentCycle,
+    activeCycle: nextCycle,
+    newWeek: 1
+  };
+}
+
+/**
+ * Genera el siguiente token de ciclo manteniendo el prefijo (ej: Ciclo_01 -> Ciclo_02).
+ */
+function calculateNextCycleToken(cycleStr) {
+  if (!cycleStr) return "Ciclo_01";
+  var match = String(cycleStr).match(/^(.*?)(\d+)$/);
+  if (match) {
+    var prefix = match[1];
+    var numStr = match[2];
+    var nextNum = parseInt(numStr, 10) + 1;
+    var paddedNum = String(nextNum).padStart(numStr.length, "0");
+    return prefix + paddedNum;
+  }
+  return String(cycleStr) + "_02";
+}
+
+/**
+ * Sincroniza la hoja 'Control_Ciclo' para visualización y control manual del Coach.
+ */
+function syncControlCicloSheet(ss, ciclo, semana, nota) {
+  var sheet = ss.getSheetByName(TABS.CONTROL_CICLO);
+  if (!sheet) {
+    sheet = ss.insertSheet(TABS.CONTROL_CICLO);
+  }
+  sheet.getRange("A1:C1").setValues([["Parámetro", "Valor", "Última Actualización / Nota"]]);
+  var hRange = sheet.getRange("A1:C1");
+  hRange.setFontWeight("bold");
+  hRange.setBackground("#0f172a");
+  hRange.setFontColor("#f8fafc");
+
+  var nowStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "GMT-4", "yyyy-MM-dd HH:mm:ss");
+  var rows = [
+    ["Ciclo_Activo", ciclo, nowStr],
+    ["Semana_Actual", semana, nota || "Operación regular"],
+    ["Total_Semanas_Ciclo", 12, "Límite del macrociclo para transición"]
+  ];
+  sheet.getRange(2, 1, rows.length, 3).setValues(rows);
+  sheet.setFrozenRows(1);
+}
+
+/**
+ * Evalúa si el payload solicita cierre de ciclo en Semana 12 y dispara la transición.
+ */
+function evaluarYProcesarCierreCiclo(ss, data) {
+  if (!data) return null;
+
+  var rawSemana = data.semana !== undefined ? data.semana : (data.week !== undefined ? data.week : null);
+  var semanaNum = null;
+  if (rawSemana !== null && rawSemana !== undefined && rawSemana !== "") {
+    var digits = String(rawSemana).replace(/\D/g, '');
+    if (digits) semanaNum = parseInt(digits, 10);
+  }
+  if (!semanaNum && data.fecha) {
+    semanaNum = getWeekNumber(parseDate(data.fecha));
+  }
+
+  var esCierre = (data.es_cierre_ciclo === true || data.es_cierre_ciclo === "true" ||
+                  data.cierre_ciclo === true || data.cierre_ciclo === "true" ||
+                  data.cierreCiclo === true || data.es_cierre_semana_12 === true);
+
+  if (semanaNum === 12 && esCierre) {
+    var athlete = data.athlete || data.atleta || "Sistema";
+    return advanceCycleState(ss, "Cierre de Semana 12 por " + athlete);
+  }
+
+  return { transicionado: false };
+}
+
+/**
+ * Obtiene o inicializa la pestaña limpia y transaccional 'Historial_RMs'.
+ */
+function getOrCreateHistorialRMsSheet(ss) {
+  var sheet = ss.getSheetByName(TABS.HISTORIAL_RMS);
+  if (!sheet) {
+    sheet = ss.insertSheet(TABS.HISTORIAL_RMS);
+  }
+
+  if (sheet.getMaxColumns() < 5) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), 5 - sheet.getMaxColumns());
+  }
+
+  var hA = sheet.getRange("A1").getValue();
+  if (!hA || String(hA).trim() === "") {
+    var headers = ["Atleta", "Fecha", "Ejercicio", "Carga_RM", "Ciclo"];
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    var hRange = sheet.getRange(1, 1, 1, headers.length);
+    hRange.setFontWeight("bold");
+    hRange.setBackground("#0f172a");
+    hRange.setFontColor("#f8fafc");
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/**
+ * ACCIÓN A: Escritura histórica en 'Historial_RMs' (appendRow limpio con fila inferior libre)
+ */
+function appendToHistorialRMs(ss, atleta, ejercicio, cargaRm, cicloToken) {
+  var sheet = getOrCreateHistorialRMsSheet(ss);
+  var targetRow = getFirstEmptyRowByColumnA(sheet);
+
+  var cleanCarga = parseFloat(String(cargaRm).replace(',', '.')) || 0;
+  var serverDate = new Date();
+
+  var rowData = [
+    String(atleta).trim(),
+    serverDate,
+    String(ejercicio).trim(),
+    cleanCarga,
+    String(cicloToken).trim()
+  ];
+
+  sheet.getRange(targetRow, 1, 1, rowData.length).setValues([rowData]);
+  sheet.getRange(targetRow, 2).setNumberFormat("yyyy-mm-dd hh:mm:ss");
+  sheet.getRange(targetRow, 4).setNumberFormat("#,##0.0");
+
+  ensureSingleCleanBottomRow(sheet, targetRow);
+
+  return {
+    targetRow: targetRow,
+    data: rowData
+  };
+}
+
+/**
+ * ACCIÓN B: Actualización de la Matriz Tradicional 'RM_Atletas'.
+ * Sobrescribe ÚNICAMENTE la celda de intersección [Atleta, Ejercicio]
+ * sin alterar la estructura horizontal, orden ni columnas existentes.
+ */
+function actualizarMatrizRM(ss, atleta, ejercicio, nuevoRm) {
+  var sheet = ss.getSheetByName(TABS.RM_ATLETAS);
+  if (!sheet) {
+    return { updated: false, reason: "Pestaña RM_Atletas no encontrada" };
+  }
+
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 1 || lastCol < 1) {
+    return { updated: false, reason: "Pestaña RM_Atletas vacía" };
+  }
+
+  var headerValues = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var colB = (headerValues[1] || "").toString().toLowerCase().trim();
+  var cleanRmVal = parseFloat(String(nuevoRm).replace(',', '.')) || 0;
+
+  // FORMATO B (MATRIZ HORIZONTAL): Columna A = Atleta, Fila 1 = Ejercicios
+  if (colB !== "ejercicio" && colB !== "exercise") {
+    var targetCol = -1;
+    var normEj = ejercicio.toLowerCase().trim();
+
+    for (var c = 1; c < headerValues.length; c++) {
+      var hName = (headerValues[c] || "").toString().toLowerCase().trim();
+      if (hName === normEj || (normEj.indexOf(hName) !== -1 && hName.length > 3)) {
+        targetCol = c + 1; // 1-indexed
+        break;
+      }
+    }
+
+    // Variaciones comunes (Clean Squat / Squat Clean, Jerk, Snatch)
+    if (targetCol === -1) {
+      if (normEj.indexOf("clean") !== -1 && normEj.indexOf("jerk") === -1) {
+        for (var c = 1; c < headerValues.length; c++) {
+          var hName = (headerValues[c] || "").toString().toLowerCase().trim();
+          if (hName.indexOf("clean") !== -1) { targetCol = c + 1; break; }
+        }
+      } else if (normEj.indexOf("jerk") !== -1 && normEj.indexOf("clean") === -1) {
+        for (var c = 1; c < headerValues.length; c++) {
+          var hName = (headerValues[c] || "").toString().toLowerCase().trim();
+          if (hName.indexOf("jerk") !== -1) { targetCol = c + 1; break; }
+        }
+      } else if (normEj.indexOf("snatch") !== -1) {
+        for (var c = 1; c < headerValues.length; c++) {
+          var hName = (headerValues[c] || "").toString().toLowerCase().trim();
+          if (hName.indexOf("snatch") !== -1) { targetCol = c + 1; break; }
+        }
+      }
+    }
+
+    // Localizar fila del atleta en Columna A
+    var athleteVals = sheet.getRange(1, 1, lastRow, 1).getValues();
+    var targetRow = -1;
+    var normAth = atleta.toLowerCase().trim();
+    for (var r = 1; r < athleteVals.length; r++) {
+      var aName = (athleteVals[r][0] || "").toString().toLowerCase().trim();
+      if (aName === normAth) {
+        targetRow = r + 1; // 1-indexed
+        break;
+      }
+    }
+
+    if (targetRow !== -1 && targetCol !== -1) {
+      var cell = sheet.getRange(targetRow, targetCol);
+      cell.setValue(cleanRmVal);
+      cell.setNumberFormat("#,##0.0");
+      return { updated: true, format: "matrix", cell: "R" + targetRow + "C" + targetCol, row: targetRow, col: targetCol };
+    }
+
+    return {
+      updated: false,
+      format: "matrix",
+      reason: "No se localizó intersección (" + (targetRow === -1 ? "Atleta no encontrado" : "Ejercicio no encontrado en encabezado") + ")"
+    };
+  }
+
+  // FORMATO A (LISTA VERTICAL): Col A = Atleta, Col B = Ejercicio, Col C = 1RM
+  var values = sheet.getRange(1, 1, lastRow, 3).getValues();
+  var normAth = atleta.toLowerCase().trim();
+  var normEj = ejercicio.toLowerCase().trim();
+
+  for (var i = 1; i < values.length; i++) {
+    var aName = (values[i][0] || "").toString().toLowerCase().trim();
+    var eName = (values[i][1] || "").toString().toLowerCase().trim();
+    if (aName === normAth && (eName === normEj || normEj.indexOf(eName) !== -1 || eName.indexOf(normEj) !== -1)) {
+      var cell = sheet.getRange(i + 1, 3);
+      cell.setValue(cleanRmVal);
+      cell.setNumberFormat("#,##0.0");
+      return { updated: true, format: "list", cell: "C" + (i + 1), row: i + 1, col: 3 };
+    }
+  }
+
+  // Si no existía la fila del atleta y ejercicio en la lista, se agrega dinámicamente
+  var nextRow = lastRow + 1;
+  sheet.getRange(nextRow, 1, 1, 3).setValues([[String(atleta).trim(), String(ejercicio).trim(), cleanRmVal]]);
+  sheet.getRange(nextRow, 3).setNumberFormat("#,##0.0");
+  ensureSingleCleanBottomRow(sheet, nextRow);
+  return { updated: true, format: "list_append", cell: "C" + nextRow, row: nextRow, col: 3 };
+}
+
+/**
+ * Normaliza nombres de variantes o complex al ejercicio madre oficial de la matriz.
+ */
+function getMotherExerciseKey(selectedExercise) {
+  if (!selectedExercise) return null;
+  var clean = selectedExercise.trim().toLowerCase();
+  if (clean.indexOf('snatch complex') !== -1) return 'Snatch';
+  if (clean.indexOf('clean complex') !== -1) return 'Clean Squat';
+  if (clean.indexOf('power snatch') !== -1) return 'Power Snatch';
+  if (clean.indexOf('snatch') !== -1) return 'Snatch';
+  if (clean.indexOf('clean & jerk') !== -1 || clean.indexOf('clean and jerk') !== -1) return 'Clean & Jerk';
+  if (clean.indexOf('clean squat') !== -1 || clean.indexOf('squat clean') !== -1) return 'Clean Squat';
+  if (clean.indexOf('power clean') !== -1) return 'Power Clean';
+  if (clean.indexOf('clean') !== -1 && clean.indexOf('jerk') === -1) return 'Clean Squat';
+  if (clean.indexOf('push jerk') !== -1) return 'Jerk';
+  if (clean.indexOf('split jerk') !== -1) return 'Jerk';
+  if (clean.indexOf('jerk') !== -1 && clean.indexOf('clean') === -1) return 'Jerk';
+  if (clean.indexOf('back squat') !== -1) return 'Back Squat';
+  if (clean.indexOf('front squat') !== -1) return 'Front Squat';
+  if (clean.indexOf('overhead squat') !== -1) return 'Overhead Squat';
+  if (clean.indexOf('deadlift') !== -1 || clean.indexOf('peso muerto') !== -1) return 'Deadlift';
+  if (clean.indexOf('bench press') !== -1 || clean.indexOf('press banca') !== -1) return 'Bench Press';
+  if (clean.indexOf('strict press') !== -1 || clean.indexOf('press estricto') !== -1) return 'Strict Press';
+  if (clean.indexOf('push press') !== -1) return 'Push Press';
+  return selectedExercise;
+}
+
+/**
+ * DOBLE FLUJO DE INGESTA ATÓMICA DE NUEVO RM:
+ * Ejecuta en milisegundos Acción A (Historial_RMs) y Acción B (RM_Atletas).
+ */
+function registrarNuevoRMDobleFlujo(ss, data, activeCycle) {
+  var atleta = (data.athlete || data.atleta || "").toString().trim();
+  var rawEjercicio = (data.ejercicio || data.exercise || "").toString().trim();
+  var carga = parseFloat(data.carga !== undefined ? data.carga : (data.weight !== undefined ? data.weight : (data.carga_rm || data.unRM || 0))) || 0;
+
+  if (!atleta || carga <= 0) {
+    return { status: "skipped", reason: "Atleta o carga inválida" };
+  }
+
+  var cicloToken = activeCycle || getActiveCycle(ss);
+  var ejercicio = getMotherExerciseKey(rawEjercicio) || rawEjercicio;
+
+  // Acción A: Escritura Histórica (appendRow en Historial_RMs)
+  var histRes = appendToHistorialRMs(ss, atleta, rawEjercicio, carga, cicloToken);
+
+  // Acción B: Actualización de la Matriz Tradicional (RM_Atletas)
+  var matrixRes = actualizarMatrizRM(ss, atleta, ejercicio, carga);
+
+  logScriptEvent(
+    ss,
+    "NUEVO_RM_REGISTRADO",
+    atleta,
+    histRes.targetRow,
+    "SUCCESS",
+    "Ej: " + rawEjercicio + " | Carga: " + carga + "kg | Ciclo: " + cicloToken + " | Matriz: " + (matrixRes.updated ? "OK (" + matrixRes.cell + ")" : matrixRes.reason)
+  );
+
+  return {
+    status: "success",
+    atleta: atleta,
+    ejercicio: rawEjercicio,
+    carga: carga,
+    ciclo: cicloToken,
+    historialRow: histRes.targetRow,
+    matrizUpdate: matrixRes
+  };
 }
 

@@ -168,11 +168,15 @@ def audit_and_heal_google_sheets():
         headers = ws_reg.row_values(1)
         col_count = len(headers)
 
-        # Regla: NO Columna Z
+        # Regla: Columna Z (26) es 'Ciclo', no debe haber Columna AA o superior
         if col_count >= 26:
             col_z = headers[25].strip() if len(headers) > 25 else ""
-            if col_z != "":
-                issues.append(f"COLUMNA Z DETECTADA ('{col_z}'). La arquitectura exige máximo 25 columnas (A-Y).")
+            if col_z != "" and col_z.lower() != "ciclo":
+                issues.append(f"COLUMNA Z INESPERADA ('{col_z}'). Se esperaba 'Ciclo'.")
+        if col_count > 26:
+            col_aa = headers[26].strip() if len(headers) > 26 else ""
+            if col_aa != "":
+                issues.append(f"COLUMNA AA DETECTADA ('{col_aa}'). La arquitectura exige máximo 26 columnas (A-Z).")
 
         # Batch-reading de las últimas 40 filas
         col_a_vals = ws_reg.col_values(1)

@@ -616,6 +616,12 @@ document.addEventListener('DOMContentLoaded', () => {
           localStorage.setItem(STORAGE_KEYS.CACHED_RM, JSON.stringify(rmDataStore));
         }
 
+        if (data.activeCycle) {
+          localStorage.setItem('kleos_active_cycle', data.activeCycle);
+          const lblCiclo = document.getElementById('lblCicloActivo');
+          if (lblCiclo) lblCiclo.textContent = `🔄 Macrociclo: ${data.activeCycle}`;
+        }
+
         renderAthletesSelect(athletesList);
         updateExerciseRmState();
       } else {
@@ -662,11 +668,20 @@ document.addEventListener('DOMContentLoaded', () => {
       athleteSelect.selectedIndex = 1; // Seleccionar el primero por comodidad
       localStorage.setItem(STORAGE_KEYS.ATHLETE, athleteSelect.value);
     }
+    renderDashboardAthletesSelect(list);
   }
 
   athleteSelect.addEventListener('change', (e) => {
     localStorage.setItem(STORAGE_KEYS.ATHLETE, e.target.value);
     updateExerciseRmState();
+    // Sincronizar con el dashboard si el usuario lo tiene en perfil individual
+    const dashSelect = document.getElementById('dashboardAthleteSelect');
+    if (dashSelect && dashSelect.value !== 'todos') {
+      dashSelect.value = e.target.value;
+      if (typeof loadDashboardData === 'function' && tabDashboard && tabDashboard.classList.contains('active')) {
+        loadDashboardData(e.target.value);
+      }
+    }
   });
 
   if (btnRefreshAthletes) {
@@ -682,31 +697,53 @@ document.addEventListener('DOMContentLoaded', () => {
   // =========================================================================
   const tabWellness = document.getElementById('tabWellness');
   const tabWod = document.getElementById('tabWod');
+  const tabDashboard = document.getElementById('tabDashboard');
   const panelWellness = document.getElementById('panelWellness');
   const panelWod = document.getElementById('panelWod');
+  const panelDashboard = document.getElementById('panelDashboard');
 
   function switchSection(target) {
+    [tabWellness, tabWod, tabDashboard].forEach(t => {
+      if (t) {
+        t.classList.remove('active');
+        t.setAttribute('aria-selected', 'false');
+      }
+    });
+    [panelWellness, panelWod, panelDashboard].forEach(p => {
+      if (p) p.classList.remove('active');
+    });
+
     if (target === 'wellness') {
-      tabWellness.classList.add('active');
-      tabWellness.setAttribute('aria-selected', 'true');
-      tabWod.classList.remove('active');
-      tabWod.setAttribute('aria-selected', 'false');
+      if (tabWellness) {
+        tabWellness.classList.add('active');
+        tabWellness.setAttribute('aria-selected', 'true');
+      }
+      if (panelWellness) panelWellness.classList.add('active');
+    } else if (target === 'wod') {
+      if (tabWod) {
+        tabWod.classList.add('active');
+        tabWod.setAttribute('aria-selected', 'true');
+      }
+      if (panelWod) panelWod.classList.add('active');
+    } else if (target === 'dashboard') {
+      if (tabDashboard) {
+        tabDashboard.classList.add('active');
+        tabDashboard.setAttribute('aria-selected', 'true');
+      }
+      if (panelDashboard) panelDashboard.classList.add('active');
 
-      panelWellness.classList.add('active');
-      panelWod.classList.remove('active');
-    } else {
-      tabWod.classList.add('active');
-      tabWod.setAttribute('aria-selected', 'true');
-      tabWellness.classList.remove('active');
-      tabWellness.setAttribute('aria-selected', 'false');
-
-      panelWod.classList.add('active');
-      panelWellness.classList.remove('active');
+      // Cargar datos del dashboard al entrar
+      const curSelect = document.getElementById('dashboardAthleteSelect');
+      const targetAth = curSelect ? curSelect.value : 'todos';
+      if (typeof loadDashboardData === 'function') {
+        loadDashboardData(targetAth);
+      }
     }
   }
 
-  tabWellness.addEventListener('click', () => switchSection('wellness'));
-  tabWod.addEventListener('click', () => switchSection('wod'));
+  if (tabWellness) tabWellness.addEventListener('click', () => switchSection('wellness'));
+  if (tabWod) tabWod.addEventListener('click', () => switchSection('wod'));
+  if (tabDashboard) tabDashboard.addEventListener('click', () => switchSection('dashboard'));
 
   // =========================================================================
   // GESTIÓN DINÁMICA DE CATEGORÍAS, RPE Y LÓGICA DE 1RM / WOD
@@ -1096,12 +1133,36 @@ document.addEventListener('DOMContentLoaded', () => {
         source1RMTag.textContent = 'Epley Estimado';
         rmStatusBadge.textContent = `⚡ 1RM Epley: ${calculated} kg`;
         rmStatusBadge.className = 'badge';
-        showToast(`1RM de ${calculated} kg calculado con Epley aplicado a la Columna J`, 'success');
+        const chkNuevoRm = document.getElementById('wodEsNuevoRm');
+        if (chkNuevoRm) chkNuevoRm.checked = true;
+        showToast(`1RM de ${calculated} kg calculado con Epley aplicado (Marcado como Nuevo RM)`, 'success');
       } else {
         showToast('Ingresa el peso y las repeticiones para calcular el 1RM con Epley', 'error');
         epleyWeight.focus();
       }
     });
+  }
+
+  // Detección proactiva de superación de 1RM al ingresar Carga
+  if (wodWeight) {
+    const autoCheckRm = () => {
+      const w = parseFloat(wodWeight.value) || 0;
+      let currentRm = parseFloat(wod1RM ? wod1RM.value : 0) || 0;
+      const athlete = athleteSelect ? athleteSelect.value : '';
+      const exercise = wodExercise ? wodExercise.value : '';
+      if (!currentRm && athlete && exercise && rmDataStore[athlete]) {
+        const motherKey = getMotherExerciseKey(exercise) || exercise;
+        currentRm = parseFloat(rmDataStore[athlete][motherKey] || rmDataStore[athlete][exercise] || 0) || 0;
+      }
+      const chk = document.getElementById('wodEsNuevoRm');
+      if (chk) {
+        if (w > 0 && ((currentRm > 0 && w >= currentRm) || currentRm === 0)) {
+          chk.checked = true;
+        }
+      }
+    };
+    wodWeight.addEventListener('input', autoCheckRm);
+    wodWeight.addEventListener('change', autoCheckRm);
   }
 
   // =========================================================================
@@ -1392,7 +1453,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (result.status === 'success' || response.ok) {
         const sheetName = type === 'wellness' ? 'Wellness' : 'Registro_Diario';
         showToast(`✅ Guardado con éxito en '${sheetName}' (fila inferior libre para Looker Studio)`, 'success');
-        return true;
+        return { success: true, ...result };
       } else {
         throw new Error(result.message || 'Error al insertar en Google Sheets');
       }
@@ -1402,10 +1463,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const sheetName = type === 'wellness' ? 'Wellness' : 'Registro_Diario';
       if (error.name === 'AbortError') {
         showToast(`⏱️ Solicitud enviada hacia '${sheetName}'. El servidor sigue procesando en segundo plano.`, 'success');
-        return true;
+        return { success: true, timeout: true };
       } else {
         showToast(`Registro enviado hacia '${sheetName}'. Si no aparece, verifica permisos 'Cualquier usuario'`, 'success');
-        return true;
+        return { success: true, fallback: true };
       }
     } finally {
       submitButton.classList.remove('loading');
@@ -1430,7 +1491,8 @@ document.addEventListener('DOMContentLoaded', () => {
         stressLevel: parseInt(document.getElementById('stressLevel').value, 10) || 2,
         moodLevel: parseInt(document.getElementById('moodLevel').value, 10) || 4,
         sorenessAreas: document.getElementById('sorenessAreas').value,
-        notes: document.getElementById('wellnessNotes').value.trim()
+        notes: document.getElementById('wellnessNotes').value.trim(),
+        ciclo: localStorage.getItem('kleos_active_cycle') || 'Ciclo_01'
       };
 
       const success = await submitPayload('wellness', data, btnSubmitWellness);
@@ -1609,6 +1671,9 @@ document.addEventListener('DOMContentLoaded', () => {
         emomMinutosCompletados: emomCompletadosVal,
         pesoWod: pesoWodVal,
         rpe: document.getElementById('wodRpe').value,
+        es_nuevo_rm: !!(document.getElementById('wodEsNuevoRm') && document.getElementById('wodEsNuevoRm').checked),
+        es_cierre_ciclo: !!(document.getElementById('wodCierreCiclo') && document.getElementById('wodCierreCiclo').checked),
+        ciclo: localStorage.getItem('kleos_active_cycle') || 'Ciclo_01',
         // Retrocompatibilidad
         date: wodDateInput.value,
         category: category,
@@ -1620,12 +1685,55 @@ document.addEventListener('DOMContentLoaded', () => {
         duration: duracionVal
       };
 
-      const success = await submitPayload('registro_diario', data, btnSubmitWod);
-      if (success) {
+      // Capturar marca anterior para la alerta de PR
+      let previousRm = 0;
+      if (athlete && rmDataStore[athlete]) {
+        const motherKey = getMotherExerciseKey(exercise) || exercise;
+        previousRm = parseFloat(rmDataStore[athlete][motherKey] || rmDataStore[athlete][exercise] || 0) || 0;
+      }
+      if (!previousRm && wod1RM && wod1RM.value) {
+        previousRm = parseFloat(wod1RM.value) || 0;
+      }
+      const nuevoRmRegistrado = weightVal > 0 ? weightVal : rmVal;
+
+      // Auto-detección infalible de nuevo RM:
+      // 1. Si el checkbox está marcado manualmente
+      // 2. Si la carga ingresada supera la marca previa (o si es su primera marca) en Fuerza / Levantamiento Olímpico
+      const chkEsNuevo = document.getElementById('wodEsNuevoRm');
+      let esNuevoRm = !!(chkEsNuevo && chkEsNuevo.checked);
+      if (!esNuevoRm && (category === 'Fuerza' || category === 'Levantamiento Olímpico') && weightVal > 0) {
+        if (previousRm > 0 && weightVal >= previousRm) {
+          esNuevoRm = true;
+          if (chkEsNuevo) chkEsNuevo.checked = true;
+        } else if (previousRm === 0) {
+          esNuevoRm = true;
+          if (chkEsNuevo) chkEsNuevo.checked = true;
+        }
+      }
+      data.es_nuevo_rm = esNuevoRm;
+
+      const submitRes = await submitPayload('registro_diario', data, btnSubmitWod);
+      const isSuccess = !!submitRes && (submitRes === true || submitRes.success === true || submitRes.status === 'success');
+      if (isSuccess) {
         const now = new Date();
         const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         localStorage.setItem(STORAGE_KEYS.LAST_WOD, JSON.stringify({ date: todayStr, time: timeStr }));
         updateSessionStatusIndicators();
+
+        // Si fue un nuevo récord personal (por bandera local o confirmación del servidor), disparar celebración
+        const serverConfirmedRm = submitRes && (submitRes.esNuevoRm === true || (submitRes.data && submitRes.data.esNuevoRm === true));
+        if (data.es_nuevo_rm || serverConfirmedRm) {
+          triggerPRAlert(finalExercise, previousRm, nuevoRmRegistrado);
+        }
+
+        if (chkEsNuevo) chkEsNuevo.checked = false;
+        const chkCierre = document.getElementById('wodCierreCiclo');
+        if (chkCierre) chkCierre.checked = false;
+
+        // Si fue un nuevo RM o cierre de ciclo, refrescar el estado de atletas y RMs
+        if (data.es_nuevo_rm || serverConfirmedRm || data.es_cierre_ciclo) {
+          await fetchAthletesAndRm();
+        }
 
         // Limpiar campos según modalidad
         if (category === 'Fuerza' || category === 'Levantamiento Olímpico') {
@@ -1680,6 +1788,469 @@ document.addEventListener('DOMContentLoaded', () => {
         toast.remove();
       }, 300);
     }, 4500);
+  }
+
+  // =========================================================================
+  // ALERTA Y MODAL CELEBRATORIO DE NUEVO RÉCORD PERSONAL (PR)
+  // =========================================================================
+  window.triggerPRAlert = function(ejercicio, viejoRm, nuevoRm) {
+    const elEx = document.getElementById('pr-exercise-name');
+    const elOld = document.getElementById('old-rm-val');
+    const elNew = document.getElementById('new-rm-val');
+    const overlay = document.getElementById('pr-alert-overlay');
+
+    if (elEx) elEx.innerText = (ejercicio || 'EJERCICIO').toUpperCase();
+    if (elOld) elOld.innerText = (viejoRm && parseFloat(viejoRm) > 0) ? `${viejoRm} kg` : '-- kg';
+    if (elNew) elNew.innerText = `${nuevoRm || 0} kg`;
+    if (overlay) overlay.style.display = 'flex';
+
+    // Ráfaga épica de confetti dorado y azul
+    if (typeof confetti === 'function') {
+      try {
+        confetti({
+          particleCount: 120,
+          spread: 80,
+          origin: { y: 0.6 },
+          colors: ['#e6b422', '#38bdf8', '#22c55e', '#f59e0b', '#ffffff']
+        });
+        setTimeout(() => {
+          confetti({
+            particleCount: 60,
+            angle: 60,
+            spread: 60,
+            origin: { x: 0 },
+            colors: ['#e6b422', '#38bdf8', '#f59e0b']
+          });
+          confetti({
+            particleCount: 60,
+            angle: 120,
+            spread: 60,
+            origin: { x: 1 },
+            colors: ['#e6b422', '#38bdf8', '#f59e0b']
+          });
+        }, 300);
+      } catch (_) {}
+    }
+  };
+
+  window.dismissPRAlert = function() {
+    const overlay = document.getElementById('pr-alert-overlay');
+    if (overlay) overlay.style.display = 'none';
+  };
+
+  const prAlertOverlay = document.getElementById('pr-alert-overlay');
+  if (prAlertOverlay) {
+    prAlertOverlay.addEventListener('click', (e) => {
+      if (e.target === prAlertOverlay) window.dismissPRAlert();
+    });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      window.dismissPRAlert();
+    }
+  });
+
+  // =========================================================================
+  // CONTROLADOR DASHBOARD NATIVO KLEOS (REEMPLAZO DE LOOKER STUDIO)
+  // =========================================================================
+
+  let chartWellnessInstance = null;
+  let chartZonasInstance = null;
+  let currentDashboardAthlete = 'todos';
+  let cachedDashboardData = null;
+
+  const dashboardAthleteSelect = document.getElementById('dashboardAthleteSelect');
+  const btnRefreshDashboard = document.getElementById('btnRefreshDashboard');
+  const dashboardLoadingOverlay = document.getElementById('dashboardLoadingOverlay');
+  const dashboardActiveAthleteName = document.getElementById('dashboardActiveAthleteName');
+  const dashboardAthleteTag = document.getElementById('dashboardAthleteTag');
+  const dashboardLastUpdatedText = document.getElementById('dashboardLastUpdatedText');
+
+  // KPI elements
+  const kpiPgaValue = document.getElementById('kpiPgaValue');
+  const kpiPgaBar = document.getElementById('kpiPgaBar');
+  const factorWellnessVal = document.getElementById('factorWellnessVal');
+  const factorTonelajeVal = document.getElementById('factorTonelajeVal');
+  const factorCardioVal = document.getElementById('factorCardioVal');
+  const kpiTonelajeValue = document.getElementById('kpiTonelajeValue');
+  const kpiTotalReps = document.getElementById('kpiTotalReps');
+  const kpiTotalWorkouts = document.getElementById('kpiTotalWorkouts');
+  const kpiTotalCardio = document.getElementById('kpiTotalCardio');
+  const kpiStatusBadge = document.getElementById('kpiStatusBadge');
+  const kpiStatusText = document.getElementById('kpiStatusText');
+  const kpiStatusDesc = document.getElementById('kpiStatusDesc');
+
+  // Chart summary badges & legends
+  const chartWellnessAvg = document.getElementById('chartWellnessAvg');
+  const chartIntensidadAvg = document.getElementById('chartIntensidadAvg');
+  const legendDescargaVal = document.getElementById('legendDescargaVal');
+  const legendHipertrofiaVal = document.getElementById('legendHipertrofiaVal');
+  const legendFuerzaVal = document.getElementById('legendFuerzaVal');
+  const dashboardRmsGrid = document.getElementById('dashboardRmsGrid');
+  const dashboardRmsCountPill = document.getElementById('dashboardRmsCountPill');
+
+  function renderDashboardAthletesSelect(list) {
+    if (!dashboardAthleteSelect) return;
+    const currentVal = dashboardAthleteSelect.value;
+    dashboardAthleteSelect.innerHTML = '';
+
+    const allOpt = document.createElement('option');
+    allOpt.value = 'todos';
+    allOpt.textContent = '🌟 Todos los Atletas (Consolidado Global)';
+    dashboardAthleteSelect.appendChild(allOpt);
+
+    if (list && Array.isArray(list)) {
+      list.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        if (currentVal && currentVal.toLowerCase() === name.toLowerCase()) {
+          opt.selected = true;
+        }
+        dashboardAthleteSelect.appendChild(opt);
+      });
+    }
+
+    if (!currentVal || currentVal === 'todos') {
+      dashboardAthleteSelect.value = 'todos';
+    }
+  }
+
+  async function loadDashboardData(targetAthlete) {
+    const athlete = (targetAthlete && targetAthlete.trim()) ? targetAthlete.trim() : 'todos';
+    currentDashboardAthlete = athlete;
+
+    // Estado de carga visual
+    if (dashboardLoadingOverlay) dashboardLoadingOverlay.style.display = 'flex';
+    if (btnRefreshDashboard) btnRefreshDashboard.classList.add('loading');
+
+    try {
+      const url = `${currentScriptUrl}?atleta=${encodeURIComponent(athlete)}`;
+      const response = await fetch(url, { method: 'GET', mode: 'cors' });
+
+      if (!response.ok) {
+        throw new Error(`HTTP Error ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data || data.status === 'error') {
+        throw new Error(data && data.message ? data.message : 'Error desconocido al consultar analítica');
+      }
+
+      cachedDashboardData = data;
+      renderDashboardView(data);
+
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      if (dashboardLastUpdatedText) {
+        dashboardLastUpdatedText.textContent = `Última sincronización: ${timeStr}`;
+      }
+
+    } catch (err) {
+      console.error('Error cargando analítica de dashboard:', err);
+      showToast(`Error al cargar métricas: ${err.message}`, 'error');
+      // Inyectar valores seguros por defecto para no congelar la UI
+      renderDashboardView({
+        atleta: athlete === 'todos' ? 'Todos los Atletas' : athlete,
+        isGlobal: (athlete === 'todos'),
+        kpis: { totalTonelaje: 0, totalReps: 0, totalWorkouts: 0, totalCardioKm: 0, avgWellness: 0, lastWellnessScore: 0, recentRMsCount: 0 },
+        wellnessHistory: [],
+        zonasCarga: { 'Descarga (<70%)': 0, 'Hipertrofia (70-80%)': 0, 'Fuerza Máxima (>80%)': 0 },
+        rms: {}
+      });
+    } finally {
+      if (dashboardLoadingOverlay) dashboardLoadingOverlay.style.display = 'none';
+      if (btnRefreshDashboard) btnRefreshDashboard.classList.remove('loading');
+    }
+  }
+
+  function renderDashboardView(data) {
+    const isGlobal = (data.isGlobal === true || data.atleta === 'Todos los Atletas' || currentDashboardAthlete === 'todos');
+    const atletaNombre = data.atleta || (isGlobal ? 'Todos los Atletas' : currentDashboardAthlete);
+
+    // Banner de identificación
+    if (dashboardActiveAthleteName) dashboardActiveAthleteName.textContent = atletaNombre;
+    if (dashboardAthleteTag) {
+      dashboardAthleteTag.textContent = isGlobal ? 'Consolidado General' : 'Perfil Individual';
+    }
+
+    // Asegurar sincronización del select
+    if (dashboardAthleteSelect && dashboardAthleteSelect.value !== currentDashboardAthlete) {
+      dashboardAthleteSelect.value = currentDashboardAthlete;
+    }
+
+    // Extracción limpia y segura con parseFloat controlado
+    const kpis = data.kpis || {};
+    const tonnage = parseFloat(kpis.totalTonelaje) || 0;
+    const reps = parseInt(kpis.totalReps, 10) || 0;
+    const workouts = parseInt(kpis.totalWorkouts, 10) || 0;
+    const cardioKm = parseFloat(kpis.totalCardioKm) || 0;
+    const avgWellness = parseFloat(kpis.avgWellness) || 0;
+    const lastWellness = parseFloat(kpis.lastWellnessScore) || 0;
+
+    // =========================================================================
+    // CÁLCULO DINÁMICO CLIENTE DEL PGA ACTUAL (%)
+    // Ponderación: Wellness 40% + Tonelaje 30% + Cardio 30%
+    // =========================================================================
+    const wellScoreEffective = avgWellness > 0 ? avgWellness : (lastWellness > 0 ? lastWellness : 20);
+    // Wellness component (40%): escala 0 a 30 normalizada
+    const pgaWellness = Math.min(100, (wellScoreEffective / 30) * 100) * 0.40;
+
+    // Tonelaje component (30%): volumen acumulado referencial
+    const targetTonnage = isGlobal ? 100000 : 15000;
+    const pgaTonelaje = Math.min(100, (tonnage / targetTonnage) * 100) * 0.30;
+
+    // Cardio component (30%): distancia cardio o adherencia de sesiones
+    const targetCardio = isGlobal ? 100 : 15;
+    const pgaCardio = Math.min(100, (cardioKm > 0 ? (cardioKm / targetCardio) * 100 : (workouts / (isGlobal ? 200 : 25)) * 100)) * 0.30;
+
+    // PGA Final
+    const pga = Math.min(100, Math.max(0, Math.round(pgaWellness + pgaTonelaje + pgaCardio)));
+
+    // Render KPI 1: PGA
+    if (kpiPgaValue) kpiPgaValue.textContent = `${pga}%`;
+    if (kpiPgaBar) kpiPgaBar.style.width = `${pga}%`;
+    if (factorWellnessVal) factorWellnessVal.textContent = `${(Math.round(pgaWellness * 10) / 10).toFixed(1)}%`;
+    if (factorTonelajeVal) factorTonelajeVal.textContent = `${(Math.round(pgaTonelaje * 10) / 10).toFixed(1)}%`;
+    if (factorCardioVal) factorCardioVal.textContent = `${(Math.round(pgaCardio * 10) / 10).toFixed(1)}%`;
+
+    // Render KPI 2: Tonelaje
+    if (kpiTonelajeValue) {
+      kpiTonelajeValue.textContent = `${tonnage.toLocaleString('es-ES', { maximumFractionDigits: 1 })} kg`;
+    }
+    if (kpiTotalReps) kpiTotalReps.textContent = reps.toLocaleString('es-ES');
+    if (kpiTotalWorkouts) kpiTotalWorkouts.textContent = workouts.toLocaleString('es-ES');
+    if (kpiTotalCardio) kpiTotalCardio.textContent = `${cardioKm.toFixed(1)} km`;
+
+    // Render KPI 3: Estado Operativo
+    if (kpiStatusBadge && kpiStatusText && kpiStatusDesc) {
+      kpiStatusBadge.classList.remove('status-optimo', 'status-estable', 'status-precaucion');
+
+      if (pga >= 80) {
+        kpiStatusBadge.classList.add('status-optimo');
+        kpiStatusText.textContent = '⚡ ÓPTIMO';
+        kpiStatusDesc.textContent = 'Capacidad neuromuscular y recuperación óptimas. Atleta preparado para alta intensidad y pruebas de RM.';
+      } else if (pga >= 60) {
+        kpiStatusBadge.classList.add('status-estable');
+        kpiStatusText.textContent = '⚖️ ESTABLE';
+        kpiStatusDesc.textContent = 'Carga y recuperación equilibradas. Proceder con el plan prescrito manteniendo buena hidratación y descanso.';
+      } else {
+        kpiStatusBadge.classList.add('status-precaucion');
+        kpiStatusText.textContent = '⚠️ PRECAUCIÓN';
+        kpiStatusDesc.textContent = 'Fatiga acumulada detectada o Wellness crítico (<21). Se prescribe autorregulación y limitar volumen axial.';
+      }
+    }
+
+    // Render Gráficos
+    renderWellnessTrendChart(data.wellnessHistory || []);
+    renderZonasCargaChart(data.zonasCarga || {});
+    renderRmsGrid(data.rms || {});
+
+    // Badges complementarios
+    if (chartWellnessAvg) {
+      chartWellnessAvg.textContent = avgWellness > 0 ? `${avgWellness.toFixed(1)} / 30` : 'Sin datos';
+    }
+    if (chartIntensidadAvg) {
+      const avgInt = parseFloat(data.intensidadPromedio) || 0;
+      chartIntensidadAvg.textContent = avgInt > 0 ? `${avgInt.toFixed(1)}%` : '--%';
+    }
+  }
+
+  function renderWellnessTrendChart(history) {
+    const canvas = document.getElementById('chartWellnessTrend');
+    if (!canvas) return;
+
+    if (chartWellnessInstance) {
+      chartWellnessInstance.destroy();
+      chartWellnessInstance = null;
+    }
+
+    // Inyectar datos seguros por defecto si el historial está vacío
+    let labels = [];
+    let scores = [];
+
+    if (history && history.length > 0) {
+      labels = history.map(h => {
+        const raw = h.fecha || '';
+        if (raw.indexOf('-') !== -1) {
+          const parts = raw.split('-');
+          return parts.length >= 3 ? `${parts[2]}/${parts[1]}` : raw;
+        }
+        if (raw.indexOf('/') !== -1) {
+          const parts = raw.split('/');
+          return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : raw;
+        }
+        return raw.substring(0, 5);
+      });
+      scores = history.map(h => parseFloat(h.score) || 0);
+    } else {
+      labels = ['Día 1', 'Día 2', 'Día 3', 'Día 4', 'Día 5'];
+      scores = [0, 0, 0, 0, 0];
+    }
+
+    const ctx = canvas.getContext('2d');
+    const gradient = ctx.createLinearGradient(0, 0, 0, 240);
+    gradient.addColorStop(0, 'rgba(56, 189, 248, 0.35)');
+    gradient.addColorStop(1, 'rgba(15, 23, 42, 0.0)');
+
+    chartWellnessInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Wellness Score',
+          data: scores,
+          borderColor: '#38bdf8',
+          borderWidth: 2.5,
+          backgroundColor: gradient,
+          fill: true,
+          tension: 0.35,
+          pointBackgroundColor: '#38bdf8',
+          pointBorderColor: '#0f172a',
+          pointBorderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          pointHoverBackgroundColor: '#fff',
+          pointHoverBorderColor: '#38bdf8'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+            titleColor: '#38bdf8',
+            bodyColor: '#f8fafc',
+            borderColor: 'rgba(56, 189, 248, 0.3)',
+            borderWidth: 1,
+            padding: 10,
+            displayColors: false,
+            callbacks: {
+              label: function(ctx) {
+                return `Score: ${ctx.parsed.y} / 30 pts`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+            ticks: { color: '#94a3b8', font: { size: 11 } }
+          },
+          y: {
+            min: 0,
+            max: 30,
+            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+            ticks: { color: '#94a3b8', font: { size: 11 }, stepSize: 5 }
+          }
+        }
+      }
+    });
+  }
+
+  function renderZonasCargaChart(zonas) {
+    const canvas = document.getElementById('chartZonasCarga');
+    if (!canvas) return;
+
+    if (chartZonasInstance) {
+      chartZonasInstance.destroy();
+      chartZonasInstance = null;
+    }
+
+    const descarga = parseFloat(zonas['Descarga (<70%)']) || 0;
+    const hipertrofia = parseFloat(zonas['Hipertrofia (70-80%)']) || 0;
+    const fuerza = parseFloat(zonas['Fuerza Máxima (>80%)']) || 0;
+
+    // Actualizar leyenda
+    if (legendDescargaVal) legendDescargaVal.textContent = `${descarga} series`;
+    if (legendHipertrofiaVal) legendHipertrofiaVal.textContent = `${hipertrofia} series`;
+    if (legendFuerzaVal) legendFuerzaVal.textContent = `${fuerza} series`;
+
+    const totalZonas = descarga + hipertrofia + fuerza;
+    const dataVals = totalZonas > 0 ? [descarga, hipertrofia, fuerza] : [1, 1, 1];
+    const bgColors = totalZonas > 0 ? ['#38bdf8', '#22c55e', '#f59e0b'] : ['#334155', '#475569', '#64748b'];
+
+    const ctx = canvas.getContext('2d');
+    chartZonasInstance = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Descarga (<70%)', 'Hipertrofia (70-80%)', 'Fuerza Máxima (>80%)'],
+        datasets: [{
+          data: dataVals,
+          backgroundColor: bgColors,
+          borderColor: '#0f172a',
+          borderWidth: 3,
+          hoverOffset: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '68%',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+            titleColor: '#f8fafc',
+            bodyColor: '#cbd5e1',
+            borderColor: 'rgba(56, 189, 248, 0.3)',
+            borderWidth: 1,
+            padding: 10,
+            callbacks: {
+              label: function(ctx) {
+                if (totalZonas === 0) return 'Sin registros de fuerza';
+                const val = ctx.parsed;
+                const pct = Math.round((val / totalZonas) * 100);
+                return `${ctx.label}: ${val} series (${pct}%)`;
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function renderRmsGrid(rms) {
+    if (!dashboardRmsGrid) return;
+    dashboardRmsGrid.innerHTML = '';
+
+    const keys = Object.keys(rms || {});
+    if (dashboardRmsCountPill) {
+      dashboardRmsCountPill.textContent = `${keys.length} RMs Registrados`;
+    }
+
+    if (keys.length === 0) {
+      dashboardRmsGrid.innerHTML = '<div class="rms-empty-msg">El atleta no posee marcas registradas aún.</div>';
+      return;
+    }
+
+    keys.sort().forEach(ej => {
+      const peso = parseFloat(rms[ej]) || 0;
+      const tile = document.createElement('div');
+      tile.className = 'rm-tile';
+      tile.innerHTML = `
+        <span class="rm-tile-name" title="${ej}">${ej}</span>
+        <span class="rm-tile-weight">${peso.toLocaleString('es-ES', { maximumFractionDigits: 1 })}<span>kg</span></span>
+      `;
+      dashboardRmsGrid.appendChild(tile);
+    });
+  }
+
+  // Listeners para el Dashboard
+  if (dashboardAthleteSelect) {
+    dashboardAthleteSelect.addEventListener('change', (e) => {
+      loadDashboardData(e.target.value);
+    });
+  }
+
+  if (btnRefreshDashboard) {
+    btnRefreshDashboard.addEventListener('click', () => {
+      const selected = dashboardAthleteSelect ? dashboardAthleteSelect.value : currentDashboardAthlete;
+      loadDashboardData(selected);
+    });
   }
 });
 // Atajo de teclado de emergencia para abrir la configuración (Ctrl + Q)

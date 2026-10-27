@@ -32,7 +32,12 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   
-  <link rel="stylesheet" href="css/styles.css?v=2.4.1">
+  <!-- Chart.js para Dashboard Analítico Nativo (Reemplazo Looker Studio) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <!-- Canvas Confetti para Celebración Épica de Récords Personales (PR) -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+
+  <link rel="stylesheet" href="css/styles.css?v=2.5.0">
 </head>
 <body>
   <!-- Fondo cinemático del Partenón con velo oscuro -->
@@ -127,6 +132,26 @@
         <div class="hub-footer">
           <span class="hub-status" id="wodStatusBadge">Listo para registrar</span>
           <span class="hub-pill">Abrir formulario &rarr;</span>
+        </div>
+      </button>
+
+      <!-- BOTÓN GRANDE 3: DASHBOARD ANALÍTICO NATIVO (LOOKER STUDIO REPLACEMENT) -->
+      <button type="button" class="hub-card dashboard-card" id="tabDashboard" role="tab" aria-selected="false" aria-controls="panelDashboard">
+        <div class="hub-header">
+          <div class="hub-icon-circle dashboard-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="20" x2="18" y2="10"/>
+              <line x1="12" y1="20" x2="12" y2="4"/>
+              <line x1="6" y1="20" x2="6" y2="14"/>
+            </svg>
+          </div>
+          <span class="hub-tag dashboard-tag">📊 ANALÍTICA EN VIVO</span>
+        </div>
+        <h2 class="hub-title">Dashboard de Rendimiento & PGA</h2>
+        <p class="hub-subtitle">Analítica nativa: Tendencia Wellness, Tonelaje, Zonas %1RM y Estado Operativo.</p>
+        <div class="hub-footer">
+          <span class="hub-status" id="dashboardStatusBadge">En tiempo real</span>
+          <span class="hub-pill">Ver métricas &rarr;</span>
         </div>
       </button>
     </nav>
@@ -569,6 +594,38 @@
               </button>
             </div>
 
+            <!-- NUEVO RÉCORD PERSONAL (1RM HISTÓRICO Y ESPEJO) -->
+            <div class="form-group full-width" id="groupNuevoRm">
+              <div class="rm-record-card glass-card-nested" style="padding: 0.85rem 1.1rem; border-radius: 10px; border: 1px solid rgba(245, 158, 11, 0.35); background: rgba(15, 23, 42, 0.6); margin-top: 0.5rem;">
+                <label style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer; margin-bottom: 0;">
+                  <input type="checkbox" id="wodEsNuevoRm" style="width: 1.25rem; height: 1.25rem; margin-top: 0.2rem; cursor: pointer; accent-color: #f59e0b;">
+                  <div>
+                    <span style="font-weight: 600; color: #f8fafc; display: flex; align-items: center; gap: 0.4rem;">
+                      ⚡ ¿Es este un Nuevo Récord Personal (Nuevo 1RM)?
+                    </span>
+                    <small style="color: #94a3b8; display: block; font-size: 0.8rem; margin-top: 0.2rem; line-height: 1.35;">
+                      Al marcar esta casilla, el sistema ejecutará el <strong>doble flujo atómico</strong>: archivará la marca en <code>Historial_RMs</code> y actualizará la celda del atleta en la matriz <code>RM_Atletas</code> sin alterar su orden.
+                    </small>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- CONTROL DE MACROCICLO Y CIERRE SEMANA 12 -->
+            <div class="form-group full-width" id="groupCicloControl" style="margin-top: 0.25rem;">
+              <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; background: rgba(30, 41, 59, 0.5); border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.2);">
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                  <span class="badge" id="lblCicloActivo" style="background: rgba(14, 165, 233, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); padding: 0.3rem 0.65rem; font-weight: 600; font-size: 0.8rem;">
+                    🔄 Macrociclo: Ciclo_01
+                  </span>
+                </div>
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin: 0; font-size: 0.85rem; color: #cbd5e1;">
+                  <input type="checkbox" id="wodCierreCiclo" style="accent-color: #38bdf8; width: 1.1rem; height: 1.1rem; cursor: pointer;">
+                  <span>🏁 Cierre de Ciclo (Test Semana 12)</span>
+                </label>
+              </div>
+            </div>
+
             <!-- Columna S: RPE (columna 19 en Registro_Diario) -->
             <div class="form-group full-width" id="groupRpe">
               <label for="wodRpe" id="lblRpe">Columna S: RPE de la Sesión (Borg CR-10 / RIR)</label>
@@ -599,6 +656,248 @@
             </button>
           </div>
         </form>
+      </section>
+
+      <!-- ============================================== -->
+      <!-- SECCIÓN 3: DASHBOARD ANALÍTICO NATIVO           -->
+      <!-- ============================================== -->
+      <section id="panelDashboard" class="tab-panel" role="tabpanel" aria-labelledby="tabDashboard">
+        <div class="glass-card dashboard-card-container">
+          
+          <!-- Encabezado del Dashboard con Filtro de Atleta y Acciones -->
+          <div class="dashboard-header-block">
+            <div class="dashboard-title-area">
+              <div class="dashboard-tag">📊 ANALÍTICA NATIVA KLEOS &bull; REEMPLAZO LOOKER STUDIO</div>
+              <h2 class="dashboard-heading">Tablero de Rendimiento Atlético & PGA</h2>
+              <p class="dashboard-subtitle">Monitorización en tiempo real de Fatiga (Wellness), Tonelaje Acumulado y Zonas de Carga %1RM.</p>
+            </div>
+
+            <!-- Controles: Selector de Atleta Dinámico + Botón de Recarga -->
+            <div class="dashboard-controls-bar">
+              <div class="dashboard-select-group">
+                <label for="dashboardAthleteSelect">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                  </svg>
+                  Atleta:
+                </label>
+                <div class="select-wrapper">
+                  <select id="dashboardAthleteSelect" aria-label="Seleccionar atleta para el dashboard">
+                    <option value="todos">🌟 Todos los Atletas (Consolidado Global)</option>
+                  </select>
+                </div>
+              </div>
+
+              <button type="button" id="btnRefreshDashboard" class="btn-refresh-dashboard" title="Actualizar datos desde Google Apps Script">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" class="spin-icon">
+                  <polyline points="23 4 23 10 17 10"/>
+                  <polyline points="1 20 1 14 7 14"/>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                </svg>
+                <span>Actualizar</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Loading Spinner Overlay para el Dashboard -->
+          <div id="dashboardLoadingOverlay" class="dashboard-loading-overlay" style="display: none;">
+            <div class="dashboard-spinner-box">
+              <div class="kleos-spinner"></div>
+              <p>Sincronizando analítica con Google Sheets...</p>
+            </div>
+          </div>
+
+          <!-- Banner de Estado y Atleta Activo -->
+          <div class="dashboard-active-banner">
+            <div class="banner-atleta-info">
+              <span class="label-atleta">Visualizando:</span>
+              <strong id="dashboardActiveAthleteName">Todos los Atletas</strong>
+              <span class="badge-atleta-tag" id="dashboardAthleteTag">Consolidado General</span>
+            </div>
+            <div class="banner-meta-info">
+              <span id="dashboardLastUpdatedText">Última sincronización: En vivo</span>
+            </div>
+          </div>
+
+          <!-- FILA 1: TARJETAS DE KPI (MÉTRICAS CLAVE) -->
+          <div class="kpi-cards-grid">
+            
+            <!-- KPI 1: PGA ACTUAL (%) -->
+            <div class="kpi-card kpi-pga-card">
+              <div class="kpi-card-header">
+                <span class="kpi-badge pga-tag">PGA</span>
+                <span class="kpi-title">PGA Actual (Readiness)</span>
+              </div>
+              <div class="kpi-value-row">
+                <span class="kpi-big-value" id="kpiPgaValue">0%</span>
+                <div class="pga-bar-track">
+                  <div class="pga-bar-fill" id="kpiPgaBar" style="width: 0%;"></div>
+                </div>
+              </div>
+              <div class="kpi-pga-breakdown">
+                <div class="pga-factor">
+                  <span class="factor-name">Wellness (40%)</span>
+                  <span class="factor-val" id="factorWellnessVal">0%</span>
+                </div>
+                <div class="pga-factor">
+                  <span class="factor-name">Tonelaje (30%)</span>
+                  <span class="factor-val" id="factorTonelajeVal">0%</span>
+                </div>
+                <div class="pga-factor">
+                  <span class="factor-name">Cardio/Sesiones (30%)</span>
+                  <span class="factor-val" id="factorCardioVal">0%</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- KPI 2: TONELAJE ACUMULADO (KG) -->
+            <div class="kpi-card kpi-tonelaje-card">
+              <div class="kpi-card-header">
+                <span class="kpi-badge tonelaje-tag">VOLUMEN</span>
+                <span class="kpi-title">Tonelaje Acumulado</span>
+              </div>
+              <div class="kpi-value-row">
+                <span class="kpi-big-value" id="kpiTonelajeValue">0 kg</span>
+              </div>
+              <div class="kpi-sub-stats">
+                <div class="sub-stat-item">
+                  <span class="sub-stat-label">Reps Totales:</span>
+                  <strong id="kpiTotalReps">0</strong>
+                </div>
+                <div class="sub-stat-item">
+                  <span class="sub-stat-label">Sesiones:</span>
+                  <strong id="kpiTotalWorkouts">0</strong>
+                </div>
+                <div class="sub-stat-item">
+                  <span class="sub-stat-label">Cardio:</span>
+                  <strong id="kpiTotalCardio">0 km</strong>
+                </div>
+              </div>
+            </div>
+
+            <!-- KPI 3: ESTADO OPERATIVO (BADGE DINÁMICO) -->
+            <div class="kpi-card kpi-status-card">
+              <div class="kpi-card-header">
+                <span class="kpi-badge status-tag">ESTADO</span>
+                <span class="kpi-title">Estado Operativo</span>
+              </div>
+              <div class="kpi-status-container">
+                <div class="status-pill status-optimo" id="kpiStatusBadge">
+                  <span class="status-indicator-dot"></span>
+                  <span id="kpiStatusText">Calculando...</span>
+                </div>
+                <p class="status-recommendation" id="kpiStatusDesc">
+                  Analizando parámetros de fatiga y volumen acumulado...
+                </p>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- FILA 2: GRÁFICOS INTERACTIVOS (CHART.JS) -->
+          <div class="dashboard-charts-grid">
+            
+            <!-- GRÁFICO 1: EVOLUCIÓN DEL WELLNESS SCORE (LÍNEA DE TENDENCIA) -->
+            <div class="chart-card glass-panel">
+              <div class="chart-card-header">
+                <div class="chart-title-wrap">
+                  <div class="chart-icon-box wellness-icon-box">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 class="chart-heading">Evolución de Fatiga & Tendencia Wellness</h3>
+                    <p class="chart-subheading">Puntuación matutina histórica (escala 0 a 30) a lo largo de las sesiones.</p>
+                  </div>
+                </div>
+                <div class="chart-stat-badge">
+                  <span>Promedio: </span>
+                  <strong id="chartWellnessAvg">--</strong>
+                </div>
+              </div>
+              <div class="chart-canvas-wrapper">
+                <canvas id="chartWellnessTrend" height="260"></canvas>
+              </div>
+              <div class="chart-footer-metrics">
+                <div class="footer-metric">
+                  <span class="metric-dot dot-optimal"></span>
+                  <span>Óptimo (&ge;24)</span>
+                </div>
+                <div class="footer-metric">
+                  <span class="metric-dot dot-warning"></span>
+                  <span>Estable (21-23)</span>
+                </div>
+                <div class="footer-metric">
+                  <span class="metric-dot dot-danger"></span>
+                  <span>Alerta Fatiga (&lt;21)</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- GRÁFICO 2: DISTRIBUCIÓN DE ZONAS DE CARGA %1RM (DONUT / TORTA) -->
+            <div class="chart-card glass-panel">
+              <div class="chart-card-header">
+                <div class="chart-title-wrap">
+                  <div class="chart-icon-box zonas-icon-box">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21.21 15.89A10 10 0 1 1 8 2.83"/>
+                      <path d="M22 12A10 10 0 0 0 12 2v10z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 class="chart-heading">Zonas de Carga Predominantes (%1RM)</h3>
+                    <p class="chart-subheading">Distribución de series de fuerza según intensidad de trabajo.</p>
+                  </div>
+                </div>
+                <div class="chart-stat-badge">
+                  <span>Intensidad Media: </span>
+                  <strong id="chartIntensidadAvg">--%</strong>
+                </div>
+              </div>
+              <div class="chart-canvas-wrapper doughnut-wrapper">
+                <canvas id="chartZonasCarga" height="260"></canvas>
+              </div>
+              <div class="zonas-legend-breakdown">
+                <div class="zona-legend-item">
+                  <span class="legend-color-box box-descarga"></span>
+                  <span class="legend-name">Descarga (&lt;70%)</span>
+                  <strong class="legend-val" id="legendDescargaVal">0</strong>
+                </div>
+                <div class="zona-legend-item">
+                  <span class="legend-color-box box-hipertrofia"></span>
+                  <span class="legend-name">Hipertrofia (70-80%)</span>
+                  <strong class="legend-val" id="legendHipertrofiaVal">0</strong>
+                </div>
+                <div class="zona-legend-item">
+                  <span class="legend-color-box box-fuerza"></span>
+                  <span class="legend-name">Fuerza Máx (&gt;80%)</span>
+                  <strong class="legend-val" id="legendFuerzaVal">0</strong>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- FILA 3: MARCAS 1RM RECIENTES & RÉCORDS -->
+          <div class="dashboard-rms-block glass-panel">
+            <div class="rms-block-header">
+              <div class="rms-title-wrap">
+                <span class="rms-icon">🏆</span>
+                <div>
+                  <h3 class="rms-heading">Marcas de 1RM Activas & Históricas</h3>
+                  <p class="rms-subheading">Valores de referencia para el cálculo de porcentaje de carga e intensidades.</p>
+                </div>
+              </div>
+              <div class="rms-count-pill" id="dashboardRmsCountPill">0 RMs Registrados</div>
+            </div>
+            <div class="rms-grid-container" id="dashboardRmsGrid">
+              <div class="rms-empty-msg">Cargando marcas del atleta...</div>
+            </div>
+          </div>
+
+        </div>
       </section>
     </main>
 
@@ -640,9 +939,56 @@
     </div>
   </div>
 
+  <!-- CONTENEDOR OCULTO DE LA ALERTA DE NUEVO PR (MODAL OVERLAY) -->
+  <div id="pr-alert-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.95); z-index: 9999; justify-content: center; align-items: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; backdrop-filter: blur(8px);">
+    <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 2px solid #38bdf8; border-radius: 16px; padding: 32px; max-width: 420px; width: 90%; text-align: center; box-shadow: 0 0 35px rgba(56, 189, 248, 0.35); animation: scaleUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;">
+      <!-- Icono de Fuego Animado -->
+      <div style="font-size: 50px; margin-bottom: 12px; animation: pulse 1.5s infinite; filter: drop-shadow(0 0 12px rgba(245, 158, 11, 0.6));">🔥</div>
+      <!-- Título -->
+      <h2 style="color: #38bdf8; margin: 0 0 8px 0; font-size: 24px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 800;">
+        ¡Nuevo Récord Personal!
+      </h2>
+      <p style="color: #94a3b8; font-size: 14px; margin: 0 0 24px 0;">
+        Tu rendimiento acaba de actualizar el ecosistema <strong style="color: #f8fafc;">Kleos</strong>.
+      </p>
+
+      <!-- Bloque Comparativo de Kilogramos -->
+      <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid #334155; border-radius: 12px; padding: 16px; margin-bottom: 24px;">
+        <div id="pr-exercise-name" style="color: #f8fafc; font-size: 16px; font-weight: 600; margin-bottom: 8px; text-transform: uppercase;">SQUAT SNATCH</div>
+        <div style="display: flex; justify-content: center; align-items: center; gap: 16px;">
+          <span id="old-rm-val" style="color: #64748b; font-size: 18px; text-decoration: line-through;">50 kg</span>
+          <span style="color: #38bdf8; font-size: 20px;">➔</span>
+          <span id="new-rm-val" style="color: #22c55e; font-size: 32px; font-weight: bold; text-shadow: 0 0 10px rgba(34, 197, 94, 0.4);">55 kg</span>
+        </div>
+      </div>
+
+      <p style="color: #64748b; font-size: 12px; line-height: 1.5; font-style: italic; margin-bottom: 24px;">
+        "El progreso no es una sensación, es ciencia acumulada."
+      </p>
+
+      <!-- Botón de Cierre -->
+      <button onclick="dismissPRAlert()" style="background-color: #38bdf8; color: #0f172a; border: none; padding: 12px 28px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; width: 100%; transition: all 0.2s ease; box-shadow: 0 4px 12px rgba(56, 189, 248, 0.2);" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+        Continuar Ciclo 🚀
+      </button>
+    </div>
+  </div>
+
+  <!-- Estilos CSS Inyectados para las Animaciones -->
+  <style>
+    @keyframes scaleUp {
+      0% { transform: scale(0.8); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.15); }
+      100% { transform: scale(1); }
+    }
+  </style>
+
   <!-- TOAST NOTIFICATIONS -->
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="js/app.js?v=2.4.1"></script>
+  <script src="js/app.js?v=2.5.0"></script>
 </body>
 </html>

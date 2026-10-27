@@ -13,10 +13,11 @@ echo   3. Auto-reparacion de formulas y aislamiento metabolico en tiempo real.
 echo.
 
 cd /d "%~dp0"
-start "Vigilante Kleos Daemon" /MIN python vigilante_kleos.py --loop 180
+set "PATH=C:\Users\USUARIO\AppData\Local\Python\bin;%PATH%"
+start "Vigilante Kleos Daemon" /MIN py vigilante_kleos.py --loop 180
 
 echo [OK] Agente Vigilante ejecutandose activamente en segundo plano.
 echo Para consultar el estado en cualquier momento, abra: ver_estado_vigilante.bat
 echo O revise el archivo: estado_salud_kleos.json
 echo.
-timeout /t 5
+timeout /t 5 >nul 2>&1

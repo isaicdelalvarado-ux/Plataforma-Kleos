@@ -1,5 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
+set "PATH=C:\Users\USUARIO\AppData\Local\Python\bin;%PATH%"
 title Plataforma Kleos - Servidor Local Seguro
 color 0B
 

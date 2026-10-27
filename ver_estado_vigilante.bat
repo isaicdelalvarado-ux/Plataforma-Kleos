@@ -6,6 +6,7 @@ echo 🛡️  PLATAFORMA KLEOS - ESTADO DE SALUD DEL ECOSISTEMA
 echo ==============================================================================
 echo.
 cd /d "%~dp0"
+set "PATH=C:\Users\USUARIO\AppData\Local\Python\bin;%PATH%"
 python vigilante_kleos.py --status
 echo.
 echo ==============================================================================
