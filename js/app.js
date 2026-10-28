@@ -1133,36 +1133,12 @@ document.addEventListener('DOMContentLoaded', () => {
         source1RMTag.textContent = 'Epley Estimado';
         rmStatusBadge.textContent = `⚡ 1RM Epley: ${calculated} kg`;
         rmStatusBadge.className = 'badge';
-        const chkNuevoRm = document.getElementById('wodEsNuevoRm');
-        if (chkNuevoRm) chkNuevoRm.checked = true;
-        showToast(`1RM de ${calculated} kg calculado con Epley aplicado (Marcado como Nuevo RM)`, 'success');
+        showToast(`1RM de ${calculated} kg calculado con Epley aplicado a la sesión`, 'success');
       } else {
         showToast('Ingresa el peso y las repeticiones para calcular el 1RM con Epley', 'error');
         epleyWeight.focus();
       }
     });
-  }
-
-  // Detección proactiva de superación de 1RM al ingresar Carga
-  if (wodWeight) {
-    const autoCheckRm = () => {
-      const w = parseFloat(wodWeight.value) || 0;
-      let currentRm = parseFloat(wod1RM ? wod1RM.value : 0) || 0;
-      const athlete = athleteSelect ? athleteSelect.value : '';
-      const exercise = wodExercise ? wodExercise.value : '';
-      if (!currentRm && athlete && exercise && rmDataStore[athlete]) {
-        const motherKey = getMotherExerciseKey(exercise) || exercise;
-        currentRm = parseFloat(rmDataStore[athlete][motherKey] || rmDataStore[athlete][exercise] || 0) || 0;
-      }
-      const chk = document.getElementById('wodEsNuevoRm');
-      if (chk) {
-        if (w > 0 && ((currentRm > 0 && w >= currentRm) || currentRm === 0)) {
-          chk.checked = true;
-        }
-      }
-    };
-    wodWeight.addEventListener('input', autoCheckRm);
-    wodWeight.addEventListener('change', autoCheckRm);
   }
 
   // =========================================================================
@@ -1696,20 +1672,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const nuevoRmRegistrado = weightVal > 0 ? weightVal : rmVal;
 
-      // Auto-detección infalible de nuevo RM:
-      // 1. Si el checkbox está marcado manualmente
-      // 2. Si la carga ingresada supera la marca previa (o si es su primera marca) en Fuerza / Levantamiento Olímpico
+      // REGLA DE SEPARACIÓN: Solo es Nuevo 1RM si el atleta activó explícitamente el toggle
       const chkEsNuevo = document.getElementById('wodEsNuevoRm');
-      let esNuevoRm = !!(chkEsNuevo && chkEsNuevo.checked);
-      if (!esNuevoRm && (category === 'Fuerza' || category === 'Levantamiento Olímpico') && weightVal > 0) {
-        if (previousRm > 0 && weightVal >= previousRm) {
-          esNuevoRm = true;
-          if (chkEsNuevo) chkEsNuevo.checked = true;
-        } else if (previousRm === 0) {
-          esNuevoRm = true;
-          if (chkEsNuevo) chkEsNuevo.checked = true;
-        }
-      }
+      const esNuevoRm = !!(chkEsNuevo && chkEsNuevo.checked);
       data.es_nuevo_rm = esNuevoRm;
 
       const submitRes = await submitPayload('registro_diario', data, btnSubmitWod);
@@ -1720,9 +1685,22 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem(STORAGE_KEYS.LAST_WOD, JSON.stringify({ date: todayStr, time: timeStr }));
         updateSessionStatusIndicators();
 
-        // Si fue un nuevo récord personal (por bandera local o confirmación del servidor), disparar celebración
+        // Si fue un nuevo récord personal (por toggle explícito local o confirmación del servidor), disparar celebración
         const serverConfirmedRm = submitRes && (submitRes.esNuevoRm === true || (submitRes.data && submitRes.data.esNuevoRm === true));
-        if (data.es_nuevo_rm || serverConfirmedRm) {
+        if (esNuevoRm || serverConfirmedRm) {
+          const motherKey = getMotherExerciseKey(finalExercise) || finalExercise;
+          if (!rmDataStore[athlete]) rmDataStore[athlete] = {};
+          rmDataStore[athlete][motherKey] = nuevoRmRegistrado;
+          rmDataStore[athlete][finalExercise] = nuevoRmRegistrado;
+          localStorage.setItem(STORAGE_KEYS.CACHED_RM, JSON.stringify(rmDataStore));
+
+          if (wod1RM) wod1RM.value = nuevoRmRegistrado;
+          if (source1RMTag) source1RMTag.textContent = 'Nuevo 1RM (Ciclo 2)';
+          if (rmStatusBadge) {
+            rmStatusBadge.textContent = `⭐ Nuevo 1RM ${motherKey}: ${nuevoRmRegistrado} kg`;
+            rmStatusBadge.className = 'badge';
+          }
+
           triggerPRAlert(finalExercise, previousRm, nuevoRmRegistrado);
         }
 
@@ -1730,9 +1708,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const chkCierre = document.getElementById('wodCierreCiclo');
         if (chkCierre) chkCierre.checked = false;
 
-        // Si fue un nuevo RM o cierre de ciclo, refrescar el estado de atletas y RMs
-        if (data.es_nuevo_rm || serverConfirmedRm || data.es_cierre_ciclo) {
-          await fetchAthletesAndRm();
+        // Si fue un nuevo RM o cierre de ciclo, refrescar el estado de atletas y RMs en segundo plano
+        if (esNuevoRm || serverConfirmedRm || data.es_cierre_ciclo) {
+          fetchAthletesAndRm();
         }
 
         // Limpiar campos según modalidad
@@ -1793,6 +1771,32 @@ document.addEventListener('DOMContentLoaded', () => {
   // =========================================================================
   // ALERTA Y MODAL CELEBRATORIO DE NUEVO RÉCORD PERSONAL (PR)
   // =========================================================================
+  function playFanfareSound() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+      const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.value = freq;
+        const startTime = ctx.currentTime + (idx * 0.11);
+        gain.gain.setValueAtTime(0, startTime);
+        gain.gain.linearRampToValueAtTime(0.28, startTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(startTime);
+        osc.stop(startTime + 0.36);
+      });
+    } catch (_) {}
+  }
+
   window.triggerPRAlert = function(ejercicio, viejoRm, nuevoRm) {
     const elEx = document.getElementById('pr-exercise-name');
     const elOld = document.getElementById('old-rm-val');
@@ -1803,6 +1807,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (elOld) elOld.innerText = (viejoRm && parseFloat(viejoRm) > 0) ? `${viejoRm} kg` : '-- kg';
     if (elNew) elNew.innerText = `${nuevoRm || 0} kg`;
     if (overlay) overlay.style.display = 'flex';
+
+    // Fanfarria auditiva
+    playFanfareSound();
 
     // Ráfaga épica de confetti dorado y azul
     if (typeof confetti === 'function') {

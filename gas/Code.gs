@@ -46,7 +46,8 @@ var TABS = {
   WELLNESS: "Wellness",
   REGISTRO_DIARIO: "Registro_Diario",
   NOMBRE_ATLETAS: "Nombre de Atletas",
-  RM_ATLETAS: "RM_Atletas",
+  RM_ATLETAS: "RM_Atletas",         // Pestaña Base Intacta (Ciclo 1)
+  RM_CICLO_2: "RM_Ciclo_02",        // Pestaña Nueva de RM (Ciclo 2)
   HISTORIAL_RMS: "Historial_RMs",
   CONTROL_CICLO: "Control_Ciclo",
   LOG_SCRIPT: "Log_Script"
@@ -1056,33 +1057,12 @@ function doPost(e) {
       });
     } 
     else if (data.type === "wod" || data.type === "registro_diario") {
-      insertRegistroDiario(ss, data, activeCycle);
+      // Regla de Separación: Solo se considera Nuevo 1RM si el atleta activó explícitamente el botón
+      var esNuevoRm = (data.es_nuevo_rm === true || data.es_nuevo_rm === "true" || data.esNuevoRm === true);
       
-      // Auto-detección inteligente de nuevo récord personal (Fuerza / Levantamiento Olímpico)
-      var athlete = (data.athlete || data.atleta || "").toString().trim();
-      var rawEjercicio = (data.ejercicio || data.exercise || "").toString().trim();
-      var categoria = (data.categoria || data.category || "Fuerza").toString().trim();
-      var carga = parseFloat(data.carga !== undefined ? data.carga : (data.weight !== undefined ? data.weight : (data.carga_rm || data.unRM || 0))) || 0;
-      var reps = parseFloat(data.reps !== undefined ? data.reps : (data.repsOrDistance !== undefined ? data.repsOrDistance : 0)) || 0;
-
-      var catLower = categoria.toLowerCase();
-      var esLifting = (categoria === "Fuerza" || categoria === "Levantamiento Olímpico" || catLower.indexOf("fuerza") !== -1 || catLower.indexOf("olímpico") !== -1 || catLower.indexOf("olimpico") !== -1);
+      insertRegistroDiario(ss, data, activeCycle, esNuevoRm);
       
-      if (!esNuevoRm && esLifting && carga > 0 && athlete) {
-        try {
-          var allRm = getRmData(ss);
-          var motherKey = getMotherExerciseKey(rawEjercicio) || rawEjercicio;
-          var prevRm = 0;
-          if (allRm && allRm[athlete]) {
-            prevRm = parseFloat(allRm[athlete][motherKey] || allRm[athlete][rawEjercicio] || 0) || 0;
-          }
-          if (carga > prevRm || (reps === 1 && carga >= prevRm && prevRm > 0)) {
-            esNuevoRm = true;
-          }
-        } catch (_) {}
-      }
-
-      // Doble flujo de ingesta para RMs
+      // Doble flujo de ingesta para RMs: ÚNICAMENTE si esNuevoRm fue activado explícitamente
       var rmRes = null;
       if (esNuevoRm) {
         rmRes = registrarNuevoRMDobleFlujo(ss, data, activeCycle);
@@ -1093,7 +1073,7 @@ function doPost(e) {
       
       var msg = "Entrenamiento guardado en pestaña '" + TABS.REGISTRO_DIARIO + "' para " + (data.athlete || "Atleta");
       if (esNuevoRm) {
-        msg += " | ⭐ Nuevo RM archivado en Historial_RMs y matriz RM_Atletas";
+        msg += " | ⭐ Nuevo 1RM Final registrado en pestaña '" + TABS.RM_CICLO_2 + "' e Historial_RMs";
       }
       if (cycleTransition && cycleTransition.transicionado) {
         msg += " | 🏁 Cierre de Semana 12 completado. Ciclo avanzado a " + cycleTransition.activeCycle;
@@ -1129,10 +1109,12 @@ function doPost(e) {
 
 /**
  * Inserta en la pestaña 'Registro_Diario' SIN USAR appendRow() ni getLastRow().
- * Busca la primera fila vacía basándose ÚNICAMENTE en la columna A (Atleta),
- * escribe A-J y S con getRange(), permitiendo que las fórmulas en K-R se ejecuten.
+ * Busca la primera fila vacía basándose ÚNICAMENTE en la columna A (Atleta).
+ * INSERTA TODAS LAS 26 COLUMNAS (A hasta Z) COMO VALORES ESTÁTICOS FIJOS
+ * calculados matemáticamente en Apps Script, blindando el historial contra
+ * recálculos accidentales y eliminando la dependencia de fórmulas dinámicas.
  */
-function insertRegistroDiario(ss, data, activeCycle) {
+function insertRegistroDiario(ss, data, activeCycle, esNuevoRm) {
   var sheet = ss.getSheetByName(TABS.REGISTRO_DIARIO);
   if (!sheet) {
     sheet = ss.insertSheet(TABS.REGISTRO_DIARIO);
@@ -1179,7 +1161,7 @@ function insertRegistroDiario(ss, data, activeCycle) {
   var pesoWod = 0;
 
   var series = 0;
-  var repsOrDistance = 0;  // AISLAMIENTO: valor neutro por defecto
+  var repsOrDistance = 0;
   var cargaKg = 0;
   var rmKg = 0;
 
@@ -1205,38 +1187,81 @@ function insertRegistroDiario(ss, data, activeCycle) {
     ejercicio = ejercicio + " (" + variante + ")";
   }
 
+  // Variables calculadas estáticas para K..R y T..V
+  var pctReal = 0;
+  var repsTotales = 0;
+  var tonelaje = 0;
+  var zonaCarga = "";
+  var cntDescarga = 0;
+  var cntHipertrofia = 0;
+  var cntFuerzaMax = 0;
+  var cntTotalFuerza = 0;
+  var pctPorcentaje = 0;
+
   if (esLifting) {
     // --- FUERZA / LEVANTAMIENTO OLÍMPICO ---
-    series = Number(data.series !== undefined ? data.series : 1);
-    repsOrDistance = data.reps !== undefined ? data.reps : (data.repsOrDistance !== undefined ? data.repsOrDistance : "");
-    cargaKg = Number(data.carga !== undefined ? data.carga : (data.weight !== undefined ? data.weight : 0)) || 0;
-    rmKg = Number(data.unRM !== undefined ? data.unRM : (data.oneRepMax !== undefined ? data.oneRepMax : 0)) || 0;
+    series = Number(data.series !== undefined ? data.series : 1) || 1;
+    var parsedReps = parseFloat(String(data.reps !== undefined ? data.reps : (data.repsOrDistance !== undefined ? data.repsOrDistance : 1)).replace(',', '.'));
+    repsOrDistance = (!isNaN(parsedReps) && parsedReps > 0) ? parsedReps : 1;
+    cargaKg = parseFloat(String(data.carga !== undefined ? data.carga : (data.weight !== undefined ? data.weight : 0)).replace(',', '.')) || 0;
 
-    // REGLA DE EQUIVALENCIA ABSOLUTA DE 1RM: JERKS Y COMPLEX OLÍMPICOS
+    // Búsqueda en Cascada de 1RM Base:
     var ejLower = ejercicio.toLowerCase();
     var isJerkMovement = (ejLower.indexOf("push jerk") !== -1 || ejLower.indexOf("split jerk") !== -1 || (ejLower.indexOf("jerk") !== -1 && ejLower.indexOf("clean & jerk") === -1 && ejLower.indexOf("clean and jerk") === -1));
     var isSnatchComplex = (ejLower.indexOf("snatch complex") !== -1);
     var isCleanComplex = (ejLower.indexOf("clean complex") !== -1);
 
-    if (rmKg === 0 || isJerkMovement || isSnatchComplex || isCleanComplex) {
-      try {
-        var allRm = getRmData(ss);
-        if (allRm && allRm[atleta]) {
+    var cascadeRm = 0;
+    try {
+      var allRm = getRmData(ss);
+      if (allRm && allRm[atleta]) {
+        var athRms = allRm[atleta];
+        var motherKey = getMotherExerciseKey(rawEjercicio) || rawEjercicio;
+        cascadeRm = athRms[rawEjercicio] || athRms[motherKey] || 0;
+        if (!cascadeRm) {
           if (isSnatchComplex) {
-            var scVal = allRm[atleta]["Snatch"] || allRm[atleta]["Snatch Complex"] || allRm[atleta]["Power Snatch"];
-            if (scVal && Number(scVal) > 0) rmKg = Number(scVal);
+            cascadeRm = athRms["Snatch"] || athRms["Snatch Complex"] || athRms["Power Snatch"] || 0;
           } else if (isCleanComplex) {
-            var ccVal = allRm[atleta]["Clean Squat"] || allRm[atleta]["Clean Complex"] || allRm[atleta]["Squat Clean"] || allRm[atleta]["Clean"] || allRm[atleta]["Clean & Jerk"] || allRm[atleta]["Power Clean"];
-            if (ccVal && Number(ccVal) > 0) rmKg = Number(ccVal);
+            cascadeRm = athRms["Clean Squat"] || athRms["Clean Complex"] || athRms["Squat Clean"] || athRms["Clean"] || athRms["Clean & Jerk"] || athRms["Power Clean"] || 0;
           } else if (isJerkMovement) {
-            var jVal = allRm[atleta]["Jerk"] || allRm[atleta]["Push Jerk"] || allRm[atleta]["Split Jerk"];
-            if (jVal && Number(jVal) > 0) rmKg = Number(jVal);
-          } else if (rmKg === 0 && allRm[atleta][rawEjercicio]) {
-            rmKg = Number(allRm[atleta][rawEjercicio]) || 0;
+            cascadeRm = athRms["Jerk"] || athRms["Push Jerk"] || athRms["Split Jerk"] || 0;
           }
         }
-      } catch (_) {}
+      }
+    } catch (_) {}
+    cascadeRm = parseFloat(String(cascadeRm).replace(',', '.')) || 0;
+
+    // LÓGICA DE REGISTRO DE RM:
+    // Si el atleta activó explícitamente el botón "Nuevo 1RM Final", su 1RM de referencia pasa a ser la nueva carga lograda
+    // Si NO activó el botón (serie de aproximación o trabajo normal), el RM de referencia es el basal/cascada vigente
+    if (esNuevoRm) {
+      rmKg = (cargaKg > 0) ? cargaKg : (cascadeRm > 0 ? cascadeRm : 0);
+    } else {
+      rmKg = (cascadeRm > 0) ? cascadeRm : (parseFloat(String(data.unRM || data.oneRepMax || 0).replace(',', '.')) || 0);
     }
+
+    repsTotales = Math.round(series * repsOrDistance);
+    tonelaje = Math.round(repsTotales * cargaKg * 100) / 100;
+
+    if (rmKg > 0 && cargaKg > 0) {
+      pctReal = Math.round((cargaKg / rmKg) * 10000) / 10000;
+      pctPorcentaje = Math.round(pctReal * 10000) / 100;
+    } else {
+      pctReal = 0;
+      pctPorcentaje = 0;
+    }
+
+    if (pctReal < 0.70) {
+      zonaCarga = "Descarga (<70%)";
+      cntDescarga = 1;
+    } else if (pctReal <= 0.80) {
+      zonaCarga = "Hipertrofia (70-80%)";
+      cntHipertrofia = 1;
+    } else {
+      zonaCarga = "Fuerza Máxima (>80%)";
+      cntFuerzaMax = 1;
+    }
+    cntTotalFuerza = 1;
 
     duracion = "";
     scoreReps = "";
@@ -1244,78 +1269,73 @@ function insertRegistroDiario(ss, data, activeCycle) {
 
   } else if (esGimnasticos) {
     // --- GIMNÁSTICOS ---
-    series = Number(data.series !== undefined ? data.series : 1);
-    repsOrDistance = data.reps !== undefined ? data.reps : (data.repsOrDistance !== undefined ? data.repsOrDistance : "");
+    series = Number(data.series !== undefined ? data.series : 1) || 1;
+    var parsedGimReps = parseFloat(String(data.reps !== undefined ? data.reps : (data.repsOrDistance !== undefined ? data.repsOrDistance : 0)).replace(',', '.'));
+    repsOrDistance = (!isNaN(parsedGimReps) && parsedGimReps >= 0) ? parsedGimReps : 0;
     cargaKg = 0;
     rmKg = 0;
+    pctReal = 0;
+    repsTotales = Math.round(series * repsOrDistance);
+    tonelaje = 0;
+    zonaCarga = "Gimnásticos";
+    cntDescarga = 0;
+    cntHipertrofia = 0;
+    cntFuerzaMax = 0;
+    cntTotalFuerza = 0;
+    pctPorcentaje = 0;
     duracion = "";
     scoreReps = "";
     pesoWod = 0;
 
   } else if (esMetcon) {
-    // =========================================================================
-    // REGLA DE AISLAMIENTO UNIVERSAL (VERSIÓN 18) — Metcon / WOD + GEMINI 1.5 FLASH
-    // Intercepta 'scoreReps' o 'scorereps' en cualquier variante de Metcon / WOD
-    // Col G (Series)     <- FORZADO a 0
-    // Col H (Reps)       <- BLOQUEADO OBLIGATORIAMENTE EN 0 (Cero absoluto)
-    // Col I (Carga)      <- FORZADO a 0
-    // Col J (1RM)        <- FORZADO a 0
-    // Col W (Duración)   <- Recibe la duración exacta (ej. '12:30')
-    // Col X (Score_Reps) <- Formato numérico estricto de 3 decimales universales (ej. 3.025)
-    // =========================================================================
-    series = 0;          // Col G = 0 (aislamiento estricto)
-    repsOrDistance = 0;  // Col H = 0 (CERO ABSOLUTO BLINDADO - el score NO va en Col H)
-    cargaKg = 0;         // Col I = 0
-    rmKg = 0;            // Col J = 0
+    // --- METCON / WOD ---
+    series = 0;
+    repsOrDistance = 0; // BLOQUEADO EN 0 ABSOLUTO
+    cargaKg = 0;
+    rmKg = 0;
+    pctReal = 0;
 
     var tipoWod = (data.tipoWod || data.tipo_wod || "").toString().trim();
     var isEmom = tipoWod.indexOf("EMOM") !== -1 || (data.emomMinutosTotales !== undefined && Number(data.emomMinutosTotales) > 0);
 
-    // Prioridad 1: Intercepción de scoreReps / scorereps directo
     if (rawScoreReps !== null) {
       var parsedDirect = parseFloat(String(rawScoreReps).replace(',', '.'));
       if (!isNaN(parsedDirect)) {
         scoreReps = parsedDirect;
       } else {
-        // Conexión con Gemini 1.5 Flash en AI Studio para parseo inteligente de descripciones complejas
         var geminiParsed = parseScoreWithGemini(rawScoreReps);
-        if (geminiParsed !== null && !isNaN(geminiParsed)) {
-          scoreReps = geminiParsed;
-        } else {
-          scoreReps = 0;
-        }
+        scoreReps = (geminiParsed !== null && !isNaN(geminiParsed)) ? geminiParsed : 0;
       }
     } else if (isEmom) {
-      // Regla Backend EMOM: Minutos_Completados + (Minutos_Faltantes / 1000)
       var minTotales = Number(data.emomMinutosTotales !== undefined ? data.emomMinutosTotales : (data.minutosTotales || 0));
       var minCompletados = Number(data.emomMinutosCompletados !== undefined ? data.emomMinutosCompletados : (data.minutosCompletados || 0));
       if (minCompletados > minTotales && minTotales > 0) minCompletados = minTotales;
       var minFaltantes = Math.max(0, minTotales - minCompletados);
       scoreReps = minCompletados + (minFaltantes / 1000);
     } else {
-      // Regla Backend For Time y AMRAP: Rondas_Completas + (Reps_Adicionales / 1000)
       var rondas = Number(data.rondasCompletas !== undefined ? data.rondasCompletas : 0);
       var repsExtra = Number(data.repsAdicionales !== undefined ? data.repsAdicionales : 0);
       scoreReps = rondas + (repsExtra / 1000);
     }
 
-    // Garantizar formato numérico estricto universal con 3 decimales fijos (ej: 3.025)
     if (scoreReps !== "" && scoreReps !== null && !isNaN(scoreReps)) {
       scoreReps = Math.round(Number(scoreReps) * 1000) / 1000;
     } else {
       scoreReps = 0;
     }
+
+    repsTotales = scoreReps;
+    tonelaje = 0;
+    zonaCarga = "Metcon / WOD";
+    cntDescarga = 0;
+    cntHipertrofia = 0;
+    cntFuerzaMax = 0;
+    cntTotalFuerza = 0;
+    pctPorcentaje = 0;
     pesoWod = 0;
 
   } else if (esCardio) {
-    // =========================================================================
-    // REGLA MATEMÁTICA Y BLINDAJE CARDIO (METROS A KM & SERIES × DISTANCIA)
-    // Col G (Series)      <- Series reales del fraccionado (mínimo 1)
-    // Col H (Distancia)   <- Normalizado estrictamente a KM (>=100 dividido entre 1000, ej: 400 -> 0.400, 3700 -> 3.700)
-    // Col L (Kilometraje) <- Multiplicación estricta Series × Distancia en km (ej. 3 × 0.400 = 1.200 km)
-    // Col I (Carga)       <- FORZADO a 0
-    // Col J (1RM)         <- FORZADO a 0
-    // =========================================================================
+    // --- CARDIO ---
     series = Number(data.series !== undefined && data.series !== null && data.series !== ""
       ? data.series
       : (data.intervals !== undefined && data.intervals !== null && data.intervals !== "" ? data.intervals : 1));
@@ -1327,64 +1347,88 @@ function insertRegistroDiario(ss, data, activeCycle) {
     
     repsOrDistance = parseCardioDistance(rawDistancia);
 
-    cargaKg = 0;   // Col I = 0
-    rmKg = 0;      // Col J = 0
+    cargaKg = 0;
+    rmKg = 0;
+    pctReal = 0;
+    repsTotales = Math.round(series * repsOrDistance * 1000) / 1000; // Kilometraje
+    tonelaje = 0;
+    zonaCarga = "Cardio";
+    cntDescarga = 0;
+    cntHipertrofia = 0;
+    cntFuerzaMax = 0;
+    cntTotalFuerza = 0;
+    pctPorcentaje = 0;
     scoreReps = "";
     pesoWod = 0;
 
   } else {
-    // --- CATEGORÍA DESCONOCIDA: fallback seguro ---
+    // --- CATEGORÍA DESCONOCIDA ---
     series = Number(data.series || 1);
-    repsOrDistance = data.reps || data.repsOrDistance || "";
+    repsOrDistance = data.reps || data.repsOrDistance || 1;
     cargaKg = Number(data.carga || data.weight || 0);
     rmKg = Number(data.unRM || data.oneRepMax || 0);
+    repsTotales = Math.round(series * Number(repsOrDistance || 1));
+    tonelaje = Math.round(repsTotales * cargaKg * 100) / 100;
+    pctReal = rmKg > 0 ? Math.round((cargaKg / rmKg) * 10000) / 10000 : 0;
+    pctPorcentaje = Math.round(pctReal * 10000) / 100;
+    zonaCarga = "General";
   }
 
   var rpe = data.rpe !== undefined ? data.rpe : "";
+  var sesionId = atleta + "_" + formatDateISO(fechaObj);
 
-  // 1. Escribir columnas A hasta J (columnas 1 a 10)
-  // Col H (repsOrDistance) para Metcon / WOD está 100% bloqueada en 0 absoluto
-  var colsA_J = [
-    atleta,          // Col A: Atleta
-    fechaStr,        // Col B: Fecha
-    mesTexto,        // Col C: Mes
-    semanaTexto,     // Col D: Semana
-    ejercicio,       // Col E: Ejercicio
-    categoria,       // Col F: Categoría
-    series,          // Col G: Series
-    repsOrDistance,  // Col H: Reps / Distancia (km) [BLOQUEADO EN 0 ABSOLUTO EN METCON]
-    cargaKg,         // Col I: Carga (kg)
-    rmKg             // Col J: 1RM Atleta (kg)
+  // Inserción Atómica 100% de Valores Estáticos Fijos (A hasta Z)
+  var fullRowData = [
+    atleta,          // Col A (1): Atleta
+    fechaStr,        // Col B (2): Fecha
+    mesTexto,        // Col C (3): Mes
+    semanaTexto,     // Col D (4): Semana
+    ejercicio,       // Col E (5): Ejercicio
+    categoria,       // Col F (6): Categoría
+    series,          // Col G (7): Series
+    repsOrDistance,  // Col H (8): Reps / Distancia (km) [BLOQUEADO EN 0 EN METCON]
+    cargaKg,         // Col I (9): Carga (kg)
+    rmKg,            // Col J (10): 1RM Atleta (kg) ESTÁTICO
+    pctReal,         // Col K (11): % 1RM Real ESTÁTICO
+    repsTotales,     // Col L (12): Reps Totales / Kilometraje ESTÁTICO
+    tonelaje,        // Col M (13): Tonelaje Total (kg) ESTÁTICO
+    zonaCarga,       // Col N (14): Zona de Carga ESTÁTICA
+    cntDescarga,     // Col O (15): Contador Descarga ESTÁTICO
+    cntHipertrofia,  // Col P (16): Contador Hipertrofia ESTÁTICO
+    cntFuerzaMax,    // Col Q (17): Contador Fuerza Max ESTÁTICO
+    cntTotalFuerza,  // Col R (18): Contador Total Fuerza ESTÁTICO
+    rpe,             // Col S (19): RPE
+    semanaNum,       // Col T (20): Fecha_Ordenada ESTÁTICA
+    sesionId,        // Col U (21): Sesion_ID ESTÁTICA
+    pctPorcentaje,   // Col V (22): % 1RM Porcentaje ESTÁTICO
+    duracion,        // Col W (23): Duracion_min
+    scoreReps,       // Col X (24): Score_Reps (3 decimales)
+    pesoWod,         // Col Y (25): Peso_WOD
+    cicloVal         // Col Z (26): Ciclo
   ];
-  sheet.getRange(targetRow, 1, 1, colsA_J.length).setValues([colsA_J]);
 
-  // 2. Escribir Columna S: RPE (columna 19)
-  sheet.getRange(targetRow, 19).setValue(rpe);
+  sheet.getRange(targetRow, 1, 1, 26).setValues([fullRowData]);
 
-  // 3. Escribir Columnas W, X, Y, Z (columnas 23, 24, 25, 26)
-  sheet.getRange(targetRow, 23, 1, 4).setValues([[duracion, scoreReps, pesoWod, cicloVal]]);
-  
-  if (esCardio) {
-    var totalKmCardio = Math.round(series * repsOrDistance * 1000) / 1000;
-    sheet.getRange(targetRow, 8).setValue(repsOrDistance);
-    sheet.getRange(targetRow, 11, 1, 8).setValues([[0, totalKmCardio, 0, categoria, 0, 0, 0, 0]]);
+  // Formatos numéricos de alta fidelidad sin fórmulas dependientes
+  sheet.getRange(targetRow, 10).setNumberFormat("#,##0.0"); // 1RM
+  sheet.getRange(targetRow, 11).setNumberFormat("0.0%");    // % 1RM
+  sheet.getRange(targetRow, 13).setNumberFormat("#,##0.0"); // Tonelaje
+  sheet.getRange(targetRow, 22).setNumberFormat("0.0");     // % 1RM Pct
+  if (esMetcon) {
+    sheet.getRange(targetRow, 24).setNumberFormat("0.000"); // Score_Reps
   }
-
-  // 4. AISLAMIENTO DE TONELAJE & AUTO-PROPAGACIÓN DE FÓRMULAS
-  ensureRowFormulas(sheet, targetRow, categoria, {
-    series: series,
-    reps: repsOrDistance,
-    scoreReps: scoreReps,
-    distancia: repsOrDistance
-  });
+  if (esCardio) {
+    sheet.getRange(targetRow, 8).setNumberFormat("0.000");  // Distancia km
+    sheet.getRange(targetRow, 12).setNumberFormat("0.000"); // Km Totales
+  }
 
   SpreadsheetApp.flush();
 
-  // 5. Mantener exactamente una sola fila limpia al final sin generar saltos masivos
+  // Mantener exactamente una sola fila limpia al final para Looker Studio
   ensureSingleCleanBottomRow(sheet, targetRow);
 
-  // 6. Telemetría de Monitoreo Proactivo en 'Log_Script'
-  logScriptEvent(ss, "INSERT_REGISTRO_DIARIO", atleta, targetRow, "HEALTHY", "Cat: " + categoria + " | Ej: " + ejercicio + " | PesoWOD: " + pesoWod + "kg | Carga: " + cargaKg + "kg | 1RM: " + rmKg + "kg | WOD: " + duracion + " / Score_Reps(X): " + scoreReps + " | Col H: " + repsOrDistance + " | RPE: " + rpe);
+  // Telemetría de Monitoreo Proactivo en 'Log_Script'
+  logScriptEvent(ss, "INSERT_REGISTRO_DIARIO", atleta, targetRow, "HEALTHY", "Cat: " + categoria + " | Ej: " + ejercicio + " | Carga: " + cargaKg + "kg | 1RM Ref: " + rmKg + "kg (%: " + pctPorcentaje + "%) | EsNuevoRM: " + esNuevoRm + " | RPE: " + rpe);
   SpreadsheetApp.flush();
 }
 
@@ -1626,21 +1670,19 @@ function getAthletesList(ss) {
 }
 
 /**
- * Obtiene las marcas de 1RM desde la pestaña 'RM_Atletas'
+ * Analiza cualquier pestaña de RM (formato vertical [Atleta, Ejercicio, 1RM] o matriz horizontal)
+ * y retorna un mapa estructurado { [Atleta]: { [Ejercicio]: peso } }
  */
-function getRmData(ss) {
-  var sheet = ss.getSheetByName(TABS.RM_ATLETAS);
+function parseRmSheetValues(sheet) {
   if (!sheet) return {};
-
   var lastRow = sheet.getLastRow();
   var lastCol = sheet.getLastColumn();
   if (lastRow < 2 || lastCol < 2) return {};
 
   var values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
   var rmMap = {};
-
   var colBHeader = (values[0][1] || "").toString().toLowerCase().trim();
-  
+
   if (colBHeader === "ejercicio" || colBHeader === "exercise") {
     // Formato A: [Atleta, Ejercicio, 1RM]
     for (var r = 1; r < values.length; r++) {
@@ -1649,7 +1691,7 @@ function getRmData(ss) {
       var rawPeso = values[r][2];
       var peso = parseFloat(String(rawPeso).replace(',', '.'));
 
-      if (atleta && ejercicio && !isNaN(peso)) {
+      if (atleta && ejercicio && !isNaN(peso) && peso > 0) {
         if (!rmMap[atleta]) rmMap[atleta] = {};
         rmMap[atleta][ejercicio] = peso;
       }
@@ -1665,36 +1707,80 @@ function getRmData(ss) {
 
       for (var c = 1; c < headers.length; c++) {
         var exerciseName = (headers[c] || "").toString().trim();
-        var valRm = parseFloat(values[i][c]);
+        var valRm = parseFloat(String(values[i][c]).replace(',', '.'));
         if (exerciseName && !isNaN(valRm) && valRm > 0) {
           rmMap[atletaName][exerciseName] = valRm;
         }
       }
     }
   }
+  return rmMap;
+}
 
-  // REGLA DE EQUIVALENCIA ABSOLUTA DE 1RM: JERKS Y COMPLEX OLÍMPICOS
-  for (var ath in rmMap) {
-    // Puente Jerks
-    var jVal = rmMap[ath]["Jerk"] || rmMap[ath]["Push Jerk"] || rmMap[ath]["Split Jerk"];
-    if (jVal) {
-      if (!rmMap[ath]["Jerk"]) rmMap[ath]["Jerk"] = jVal;
-      if (!rmMap[ath]["Push Jerk"]) rmMap[ath]["Push Jerk"] = jVal;
-      if (!rmMap[ath]["Split Jerk"]) rmMap[ath]["Split Jerk"] = jVal;
-    }
-    // Puente Snatch Complex -> Snatch
-    var sVal = rmMap[ath]["Snatch"] || rmMap[ath]["Snatch Complex"] || rmMap[ath]["Power Snatch"];
-    if (sVal) {
-      if (!rmMap[ath]["Snatch Complex"]) rmMap[ath]["Snatch Complex"] = sVal;
-    }
-    // Puente Clean Complex -> Clean Squat
-    var cVal = rmMap[ath]["Clean Squat"] || rmMap[ath]["Clean Complex"] || rmMap[ath]["Squat Clean"] || rmMap[ath]["Clean"] || rmMap[ath]["Clean & Jerk"];
-    if (cVal) {
-      if (!rmMap[ath]["Clean Complex"]) rmMap[ath]["Clean Complex"] = cVal;
+/**
+ * LÓGICA DE LECTURA EN CASCADA (DOBLE PESTAÑA CON FALLBACK AUTOMÁTICO):
+ * 1. Pestaña Base Intacta (Ciclo 1): 'RM_Atletas' (o 'Atletas_1RM')
+ * 2. Pestaña Nueva de RM (Ciclo 2): 'RM_Ciclo_02'
+ *
+ * Cascada:
+ * a) Consulta primero en la Pestaña Nueva de RM (Ciclo 2).
+ * b) Si el valor existe y es > 0, usa ese nuevo RM.
+ * c) Si está vacío o es 0, busca y devuelve automáticamente el RM de la Pestaña Anterior (Ciclo 1).
+ * Jamás devuelve 0 kg si el ejercicio existía en la pestaña anterior.
+ */
+function getRmData(ss, activeCycle) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // 1. Cargar Pestaña Base Intacta (Ciclo 1)
+  var baseSheet = ss.getSheetByName(TABS.RM_ATLETAS) || ss.getSheetByName("Atletas_1RM");
+  var baseMap = parseRmSheetValues(baseSheet);
+
+  // 2. Cargar Pestaña Nueva de RM (Ciclo 2)
+  var c2Sheet = ss.getSheetByName(TABS.RM_CICLO_2) || ss.getSheetByName("RM_Atletas_Ciclo_02") || ss.getSheetByName("RM_Ciclo2");
+  var c2Map = parseRmSheetValues(c2Sheet);
+
+  // 3. Fusión en Cascada: La base de Ciclo 1 es el cimiento completo
+  var cascadeMap = {};
+  for (var ath in baseMap) {
+    cascadeMap[ath] = {};
+    for (var ej in baseMap[ath]) {
+      cascadeMap[ath][ej] = baseMap[ath][ej];
     }
   }
 
-  return rmMap;
+  // Sobrescribir con marcas de Ciclo 2 ÚNICAMENTE si existen y son > 0
+  for (var ath in c2Map) {
+    if (!cascadeMap[ath]) cascadeMap[ath] = {};
+    for (var ej in c2Map[ath]) {
+      var v = c2Map[ath][ej];
+      if (v !== undefined && v !== null && !isNaN(v) && Number(v) > 0) {
+        cascadeMap[ath][ej] = Number(v);
+      }
+    }
+  }
+
+  // 4. REGLA DE EQUIVALENCIA ABSOLUTA DE 1RM: JERKS Y COMPLEX OLÍMPICOS
+  for (var a in cascadeMap) {
+    // Puente Jerks
+    var jVal = cascadeMap[a]["Jerk"] || cascadeMap[a]["Push Jerk"] || cascadeMap[a]["Split Jerk"];
+    if (jVal) {
+      if (!cascadeMap[a]["Jerk"]) cascadeMap[a]["Jerk"] = jVal;
+      if (!cascadeMap[a]["Push Jerk"]) cascadeMap[a]["Push Jerk"] = jVal;
+      if (!cascadeMap[a]["Split Jerk"]) cascadeMap[a]["Split Jerk"] = jVal;
+    }
+    // Puente Snatch Complex -> Snatch
+    var sVal = cascadeMap[a]["Snatch"] || cascadeMap[a]["Snatch Complex"] || cascadeMap[a]["Power Snatch"];
+    if (sVal) {
+      if (!cascadeMap[a]["Snatch Complex"]) cascadeMap[a]["Snatch Complex"] = sVal;
+    }
+    // Puente Clean Complex -> Clean Squat
+    var cVal = cascadeMap[a]["Clean Squat"] || cascadeMap[a]["Clean Complex"] || cascadeMap[a]["Squat Clean"] || cascadeMap[a]["Clean"] || cascadeMap[a]["Clean & Jerk"];
+    if (cVal) {
+      if (!cascadeMap[a]["Clean Complex"]) cascadeMap[a]["Clean Complex"] = cVal;
+    }
+  }
+
+  return cascadeMap;
 }
 
 /**
@@ -2626,107 +2712,90 @@ function appendToHistorialRMs(ss, atleta, ejercicio, cargaRm, cicloToken) {
 }
 
 /**
- * ACCIÓN B: Actualización de la Matriz Tradicional 'RM_Atletas'.
- * Sobrescribe ÚNICAMENTE la celda de intersección [Atleta, Ejercicio]
- * sin alterar la estructura horizontal, orden ni columnas existentes.
+ * ACCIÓN B: Actualización de la Pestaña Nueva de RM (Ciclo 2 - RM_Ciclo_02).
+ * PRESERVA 100% INTACTA LA PESTAÑA BASE DE CICLO 1 (RM_Atletas).
+ * Sobrescribe ÚNICAMENTE la celda [Atleta, Ejercicio] en RM_Ciclo_02
+ * aplicando la regla de Upsert con Math.max (solo guarda si nuevoRm > registrado).
  */
 function actualizarMatrizRM(ss, atleta, ejercicio, nuevoRm) {
-  var sheet = ss.getSheetByName(TABS.RM_ATLETAS);
+  var targetTabName = TABS.RM_CICLO_2 || "RM_Ciclo_02";
+  var sheet = ss.getSheetByName(targetTabName);
   if (!sheet) {
-    return { updated: false, reason: "Pestaña RM_Atletas no encontrada" };
+    sheet = ss.insertSheet(targetTabName);
+    initRmCiclo2Headers(sheet);
+  }
+
+  var cleanRmVal = parseFloat(String(nuevoRm).replace(',', '.')) || 0;
+  if (cleanRmVal <= 0) {
+    return { updated: false, reason: "Carga de 1RM inválida (" + nuevoRm + ")" };
   }
 
   var lastRow = sheet.getLastRow();
-  var lastCol = sheet.getLastColumn();
-  if (lastRow < 1 || lastCol < 1) {
-    return { updated: false, reason: "Pestaña RM_Atletas vacía" };
-  }
-
-  var headerValues = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  var colB = (headerValues[1] || "").toString().toLowerCase().trim();
-  var cleanRmVal = parseFloat(String(nuevoRm).replace(',', '.')) || 0;
-
-  // FORMATO B (MATRIZ HORIZONTAL): Columna A = Atleta, Fila 1 = Ejercicios
-  if (colB !== "ejercicio" && colB !== "exercise") {
-    var targetCol = -1;
-    var normEj = ejercicio.toLowerCase().trim();
-
-    for (var c = 1; c < headerValues.length; c++) {
-      var hName = (headerValues[c] || "").toString().toLowerCase().trim();
-      if (hName === normEj || (normEj.indexOf(hName) !== -1 && hName.length > 3)) {
-        targetCol = c + 1; // 1-indexed
-        break;
-      }
-    }
-
-    // Variaciones comunes (Clean Squat / Squat Clean, Jerk, Snatch)
-    if (targetCol === -1) {
-      if (normEj.indexOf("clean") !== -1 && normEj.indexOf("jerk") === -1) {
-        for (var c = 1; c < headerValues.length; c++) {
-          var hName = (headerValues[c] || "").toString().toLowerCase().trim();
-          if (hName.indexOf("clean") !== -1) { targetCol = c + 1; break; }
-        }
-      } else if (normEj.indexOf("jerk") !== -1 && normEj.indexOf("clean") === -1) {
-        for (var c = 1; c < headerValues.length; c++) {
-          var hName = (headerValues[c] || "").toString().toLowerCase().trim();
-          if (hName.indexOf("jerk") !== -1) { targetCol = c + 1; break; }
-        }
-      } else if (normEj.indexOf("snatch") !== -1) {
-        for (var c = 1; c < headerValues.length; c++) {
-          var hName = (headerValues[c] || "").toString().toLowerCase().trim();
-          if (hName.indexOf("snatch") !== -1) { targetCol = c + 1; break; }
-        }
-      }
-    }
-
-    // Localizar fila del atleta en Columna A
-    var athleteVals = sheet.getRange(1, 1, lastRow, 1).getValues();
-    var targetRow = -1;
-    var normAth = atleta.toLowerCase().trim();
-    for (var r = 1; r < athleteVals.length; r++) {
-      var aName = (athleteVals[r][0] || "").toString().toLowerCase().trim();
-      if (aName === normAth) {
-        targetRow = r + 1; // 1-indexed
-        break;
-      }
-    }
-
-    if (targetRow !== -1 && targetCol !== -1) {
-      var cell = sheet.getRange(targetRow, targetCol);
-      cell.setValue(cleanRmVal);
-      cell.setNumberFormat("#,##0.0");
-      return { updated: true, format: "matrix", cell: "R" + targetRow + "C" + targetCol, row: targetRow, col: targetCol };
-    }
-
-    return {
-      updated: false,
-      format: "matrix",
-      reason: "No se localizó intersección (" + (targetRow === -1 ? "Atleta no encontrado" : "Ejercicio no encontrado en encabezado") + ")"
-    };
-  }
-
-  // FORMATO A (LISTA VERTICAL): Col A = Atleta, Col B = Ejercicio, Col C = 1RM
-  var values = sheet.getRange(1, 1, lastRow, 3).getValues();
   var normAth = atleta.toLowerCase().trim();
   var normEj = ejercicio.toLowerCase().trim();
+  var motherEj = (getMotherExerciseKey(ejercicio) || ejercicio).toLowerCase().trim();
 
-  for (var i = 1; i < values.length; i++) {
-    var aName = (values[i][0] || "").toString().toLowerCase().trim();
-    var eName = (values[i][1] || "").toString().toLowerCase().trim();
-    if (aName === normAth && (eName === normEj || normEj.indexOf(eName) !== -1 || eName.indexOf(normEj) !== -1)) {
-      var cell = sheet.getRange(i + 1, 3);
-      cell.setValue(cleanRmVal);
-      cell.setNumberFormat("#,##0.0");
-      return { updated: true, format: "list", cell: "C" + (i + 1), row: i + 1, col: 3 };
+  // Buscar si ya existe la fila en formato vertical [Atleta, Ejercicio, 1RM]
+  if (lastRow > 1) {
+    var values = sheet.getRange(1, 1, lastRow, 3).getValues();
+    for (var i = 1; i < values.length; i++) {
+      var aName = (values[i][0] || "").toString().toLowerCase().trim();
+      var rawE = (values[i][1] || "").toString().trim();
+      var eName = rawE.toLowerCase();
+      var eMother = (getMotherExerciseKey(rawE) || rawE).toLowerCase().trim();
+
+      var isSameAth = (aName === normAth);
+      var isSameEj = (eName === normEj || eName === motherEj || eMother === normEj || eMother === motherEj);
+
+      if (isSameAth && isSameEj) {
+        // Regla Anti-Duplicados y Upsert: Solo actualizar si la nueva marca es MAYOR a la previa
+        var existingVal = parseFloat(String(values[i][2]).replace(',', '.')) || 0;
+        var finalVal = Math.max(existingVal, cleanRmVal);
+        var cell = sheet.getRange(i + 1, 3);
+        cell.setValue(finalVal);
+        cell.setNumberFormat("#,##0.0");
+        return {
+          updated: true,
+          mode: "upsert_max",
+          cell: "C" + (i + 1),
+          row: i + 1,
+          col: 3,
+          tab: targetTabName,
+          previousVal: existingVal,
+          finalVal: finalVal
+        };
+      }
     }
   }
 
-  // Si no existía la fila del atleta y ejercicio en la lista, se agrega dinámicamente
-  var nextRow = lastRow + 1;
-  sheet.getRange(nextRow, 1, 1, 3).setValues([[String(atleta).trim(), String(ejercicio).trim(), cleanRmVal]]);
+  // Si no existía para este atleta/ejercicio en Ciclo 2, insertar una sola fila limpia sin duplicados
+  var nextRow = Math.max(2, lastRow + 1);
+  var canonicalExercise = getMotherExerciseKey(ejercicio) || ejercicio;
+  sheet.getRange(nextRow, 1, 1, 3).setValues([[String(atleta).trim(), String(canonicalExercise).trim(), cleanRmVal]]);
   sheet.getRange(nextRow, 3).setNumberFormat("#,##0.0");
   ensureSingleCleanBottomRow(sheet, nextRow);
-  return { updated: true, format: "list_append", cell: "C" + nextRow, row: nextRow, col: 3 };
+  return {
+    updated: true,
+    mode: "inserted_new",
+    cell: "C" + nextRow,
+    row: nextRow,
+    col: 3,
+    tab: targetTabName,
+    finalVal: cleanRmVal
+  };
+}
+
+/**
+ * Inicializa encabezados de 'RM_Ciclo_02' si no existen
+ */
+function initRmCiclo2Headers(sheet) {
+  var headers = ["Atleta", "Ejercicio", "1RM (kg)"];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  var hRange = sheet.getRange(1, 1, 1, headers.length);
+  hRange.setFontWeight("bold");
+  hRange.setBackground("#0f172a");
+  hRange.setFontColor("#f8fafc");
+  sheet.setFrozenRows(1);
 }
 
 /**
