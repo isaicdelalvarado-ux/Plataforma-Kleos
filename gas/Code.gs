@@ -1409,19 +1409,6 @@ function insertRegistroDiario(ss, data, activeCycle, esNuevoRm) {
 
   sheet.getRange(targetRow, 1, 1, 26).setValues([fullRowData]);
 
-  // Formatos numéricos de alta fidelidad sin fórmulas dependientes
-  sheet.getRange(targetRow, 10).setNumberFormat("#,##0.0"); // 1RM
-  sheet.getRange(targetRow, 11).setNumberFormat("0.0%");    // % 1RM
-  sheet.getRange(targetRow, 13).setNumberFormat("#,##0.0"); // Tonelaje
-  sheet.getRange(targetRow, 22).setNumberFormat("0.0");     // % 1RM Pct
-  if (esMetcon) {
-    sheet.getRange(targetRow, 24).setNumberFormat("0.000"); // Score_Reps
-  }
-  if (esCardio) {
-    sheet.getRange(targetRow, 8).setNumberFormat("0.000");  // Distancia km
-    sheet.getRange(targetRow, 12).setNumberFormat("0.000"); // Km Totales
-  }
-
   SpreadsheetApp.flush();
 
   // Mantener exactamente una sola fila limpia al final para Looker Studio
