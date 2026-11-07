@@ -60,6 +60,11 @@ def main():
         for ej in standard_exercises:
             new_rows.append(['Mayeorling Monzon', ej, ''])
 
+    if 'Luisana Rojas' not in existing_athletes:
+        print("  -> Agregando catalogo de ejercicios para 'Luisana Rojas'...")
+        for ej in standard_exercises:
+            new_rows.append(['Luisana Rojas', ej, ''])
+
     if new_rows:
         ws_rm.append_rows(new_rows, value_input_option='USER_ENTERED')
         print(f"  [OK] Se agregaron {len(new_rows)} registros de RM en 'RM_Atletas'.")
