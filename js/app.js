@@ -575,6 +575,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (cachedAthletes) {
       athletesList = JSON.parse(cachedAthletes);
       renderAthletesSelect(athletesList);
+      renderDashboardAthletesSelect(athletesList);
     }
     const cachedRm = localStorage.getItem(STORAGE_KEYS.CACHED_RM);
     if (cachedRm) {
@@ -623,13 +624,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         renderAthletesSelect(athletesList);
+        renderDashboardAthletesSelect(athletesList);
         updateExerciseRmState();
       } else {
         renderAthletesSelect(athletesList);
+        renderDashboardAthletesSelect(athletesList);
       }
     } catch (err) {
       console.warn('Usando lista local de atletas:', err);
       renderAthletesSelect(athletesList);
+      renderDashboardAthletesSelect(athletesList);
     }
   }
 
@@ -734,9 +738,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Cargar datos del dashboard al entrar
       const curSelect = document.getElementById('dashboardAthleteSelect');
-      const targetAth = curSelect ? curSelect.value : 'todos';
+      const targetAth = curSelect ? curSelect.value : (currentDashboardAthlete || 'todos');
+      const curCycle = document.getElementById('filtro-ciclo');
+      const targetCycle = curCycle ? curCycle.value : (currentDashboardCycle || 'Atenea');
       if (typeof loadDashboardData === 'function') {
-        loadDashboardData(targetAth);
+        loadDashboardData(targetAth, targetCycle);
       }
     }
   }
@@ -1474,7 +1480,7 @@ document.addEventListener('DOMContentLoaded', () => {
         moodLevel: parseInt(document.getElementById('moodLevel').value, 10) || 4,
         sorenessAreas: document.getElementById('sorenessAreas').value,
         notes: document.getElementById('wellnessNotes').value.trim(),
-        ciclo: localStorage.getItem('kleos_active_cycle') || 'Ciclo_01'
+        ciclo: localStorage.getItem('kleos_active_cycle') || 'Atenea'
       };
 
       const success = await submitPayload('wellness', data, btnSubmitWellness);
@@ -1655,7 +1661,7 @@ document.addEventListener('DOMContentLoaded', () => {
         rpe: document.getElementById('wodRpe').value,
         es_nuevo_rm: !!(document.getElementById('wodEsNuevoRm') && document.getElementById('wodEsNuevoRm').checked),
         es_cierre_ciclo: !!(document.getElementById('wodCierreCiclo') && document.getElementById('wodCierreCiclo').checked),
-        ciclo: localStorage.getItem('kleos_active_cycle') || 'Ciclo_01',
+        ciclo: localStorage.getItem('kleos_active_cycle') || 'Atenea',
         // Retrocompatibilidad
         date: wodDateInput.value,
         category: category,
@@ -1871,14 +1877,20 @@ document.addEventListener('DOMContentLoaded', () => {
   let chartWellnessInstance = null;
   let chartZonasInstance = null;
   let currentDashboardAthlete = 'todos';
+  let currentDashboardCycle = 'Atenea';
   let cachedDashboardData = null;
 
+  // Selectores y Controles de la Command Bar
+  const filtroCiclo = document.getElementById('filtro-ciclo');
   const dashboardAthleteSelect = document.getElementById('dashboardAthleteSelect');
   const btnRefreshDashboard = document.getElementById('btnRefreshDashboard');
   const dashboardLoadingOverlay = document.getElementById('dashboardLoadingOverlay');
   const dashboardActiveAthleteName = document.getElementById('dashboardActiveAthleteName');
   const dashboardAthleteTag = document.getElementById('dashboardAthleteTag');
+  const dashboardCycleBadge = document.getElementById('dashboardCycleBadge');
   const dashboardLastUpdatedText = document.getElementById('dashboardLastUpdatedText');
+  const phaseTitleText = document.getElementById('phaseTitleText');
+  const macroSegmentedBar = document.getElementById('macroSegmentedBar');
 
   // KPI elements
   const kpiPgaValue = document.getElementById('kpiPgaValue');
@@ -1886,10 +1898,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const factorWellnessVal = document.getElementById('factorWellnessVal');
   const factorTonelajeVal = document.getElementById('factorTonelajeVal');
   const factorCardioVal = document.getElementById('factorCardioVal');
+  const microBarWellness = document.getElementById('microBarWellness');
+  const microBarTonelaje = document.getElementById('microBarTonelaje');
+  const microBarCardio = document.getElementById('microBarCardio');
+
   const kpiTonelajeValue = document.getElementById('kpiTonelajeValue');
   const kpiTotalReps = document.getElementById('kpiTotalReps');
   const kpiTotalWorkouts = document.getElementById('kpiTotalWorkouts');
   const kpiTotalCardio = document.getElementById('kpiTotalCardio');
+
+  // Status & Gauge elements
+  const gaugeArcFill = document.getElementById('gaugeArcFill');
+  const gaugeScoreText = document.getElementById('gaugeScoreText');
   const kpiStatusBadge = document.getElementById('kpiStatusBadge');
   const kpiStatusText = document.getElementById('kpiStatusText');
   const kpiStatusDesc = document.getElementById('kpiStatusDesc');
@@ -1900,6 +1920,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const legendDescargaVal = document.getElementById('legendDescargaVal');
   const legendHipertrofiaVal = document.getElementById('legendHipertrofiaVal');
   const legendFuerzaVal = document.getElementById('legendFuerzaVal');
+  const rmsCycleNameBadge = document.getElementById('rmsCycleNameBadge');
   const dashboardRmsGrid = document.getElementById('dashboardRmsGrid');
   const dashboardRmsCountPill = document.getElementById('dashboardRmsCountPill');
 
@@ -1930,16 +1951,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  async function loadDashboardData(targetAthlete) {
-    const athlete = (targetAthlete && targetAthlete.trim()) ? targetAthlete.trim() : 'todos';
+  async function loadDashboardData(targetAthlete, targetCycle) {
+    const athlete = (targetAthlete && targetAthlete.trim()) ? targetAthlete.trim() : (currentDashboardAthlete || 'todos');
+    const cycle = (targetCycle && targetCycle.trim()) ? targetCycle.trim() : (currentDashboardCycle || 'Atenea');
     currentDashboardAthlete = athlete;
+    currentDashboardCycle = cycle;
 
     // Estado de carga visual
     if (dashboardLoadingOverlay) dashboardLoadingOverlay.style.display = 'flex';
     if (btnRefreshDashboard) btnRefreshDashboard.classList.add('loading');
 
     try {
-      const url = `${currentScriptUrl}?atleta=${encodeURIComponent(athlete)}`;
+      const url = `${currentScriptUrl}?atleta=${encodeURIComponent(athlete)}&ciclo=${encodeURIComponent(cycle)}`;
       const response = await fetch(url, { method: 'GET', mode: 'cors' });
 
       if (!response.ok) {
@@ -1951,13 +1974,20 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error(data && data.message ? data.message : 'Error desconocido al consultar analítica');
       }
 
+      if (data.activeCycle) {
+        localStorage.setItem('kleos_active_cycle', data.activeCycle);
+      }
+      if (data.selectedCycle) {
+        currentDashboardCycle = data.selectedCycle;
+      }
+
       cachedDashboardData = data;
       renderDashboardView(data);
 
       const now = new Date();
       const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       if (dashboardLastUpdatedText) {
-        dashboardLastUpdatedText.textContent = `Última sincronización: ${timeStr}`;
+        dashboardLastUpdatedText.textContent = `Última sinc: ${timeStr}`;
       }
 
     } catch (err) {
@@ -1967,10 +1997,13 @@ document.addEventListener('DOMContentLoaded', () => {
       renderDashboardView({
         atleta: athlete === 'todos' ? 'Todos los Atletas' : athlete,
         isGlobal: (athlete === 'todos'),
+        selectedCycle: cycle,
+        currentWeek: cycle === 'Zeus' ? 12 : 1,
         kpis: { totalTonelaje: 0, totalReps: 0, totalWorkouts: 0, totalCardioKm: 0, avgWellness: 0, lastWellnessScore: 0, recentRMsCount: 0 },
         wellnessHistory: [],
         zonasCarga: { 'Descarga (<70%)': 0, 'Hipertrofia (70-80%)': 0, 'Fuerza Máxima (>80%)': 0 },
-        rms: {}
+        rms: {},
+        rmDeltas: {}
       });
     } finally {
       if (dashboardLoadingOverlay) dashboardLoadingOverlay.style.display = 'none';
@@ -1981,6 +2014,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderDashboardView(data) {
     const isGlobal = (data.isGlobal === true || data.atleta === 'Todos los Atletas' || currentDashboardAthlete === 'todos');
     const atletaNombre = data.atleta || (isGlobal ? 'Todos los Atletas' : currentDashboardAthlete);
+    const selectedCycle = data.selectedCycle || currentDashboardCycle || 'Atenea';
+    const weekNum = parseInt(data.currentWeek, 10) || (selectedCycle === 'Zeus' ? 12 : 1);
 
     // Banner de identificación
     if (dashboardActiveAthleteName) dashboardActiveAthleteName.textContent = atletaNombre;
@@ -1988,9 +2023,48 @@ document.addEventListener('DOMContentLoaded', () => {
       dashboardAthleteTag.textContent = isGlobal ? 'Consolidado General' : 'Perfil Individual';
     }
 
-    // Asegurar sincronización del select
+    // Badge de Ciclo y Semana
+    if (dashboardCycleBadge) {
+      const cycleEmoji = selectedCycle === 'Zeus' ? '🏛️' : '⚡';
+      dashboardCycleBadge.textContent = `${cycleEmoji} ${selectedCycle} · Semana ${weekNum}`;
+    }
+
+    // Sincronizar selectores del Command Bar
+    if (filtroCiclo && filtroCiclo.value !== selectedCycle) {
+      filtroCiclo.value = selectedCycle;
+    }
     if (dashboardAthleteSelect && dashboardAthleteSelect.value !== currentDashboardAthlete) {
       dashboardAthleteSelect.value = currentDashboardAthlete;
+    }
+
+    // Indicador visual de Fase & Barra Segmentada de 12 bloques
+    if (phaseTitleText) {
+      if (selectedCycle === 'Zeus') {
+        phaseTitleText.innerHTML = `Fase: <span>Macrociclo Concluido (100% 1RM)</span> &bull; 12/12 Semanas`;
+      } else {
+        let phaseName = 'Acumulación (70-75% 1RM)';
+        if (weekNum >= 5 && weekNum <= 8) phaseName = 'Intensificación (80-85% 1RM)';
+        else if (weekNum >= 9 && weekNum <= 11) phaseName = 'Realización / Pico (>85-90% 1RM)';
+        else if (weekNum >= 12) phaseName = 'Testeo Máximo & Cierre (100%+ 1RM)';
+        phaseTitleText.innerHTML = `Fase: <span>${phaseName}</span> &bull; Sem ${weekNum}/12`;
+      }
+    }
+
+    if (macroSegmentedBar) {
+      const blocks = macroSegmentedBar.querySelectorAll('.macro-seg-block');
+      blocks.forEach(block => {
+        const w = parseInt(block.getAttribute('data-week'), 10);
+        block.classList.remove('active', 'completed');
+        if (selectedCycle === 'Zeus') {
+          block.classList.add('completed');
+        } else {
+          if (w < weekNum) {
+            block.classList.add('completed');
+          } else if (w === weekNum) {
+            block.classList.add('active');
+          }
+        }
+      });
     }
 
     // Extracción limpia y segura con parseFloat controlado
@@ -2003,30 +2077,40 @@ document.addEventListener('DOMContentLoaded', () => {
     const lastWellness = parseFloat(kpis.lastWellnessScore) || 0;
 
     // =========================================================================
-    // CÁLCULO DINÁMICO CLIENTE DEL PGA ACTUAL (%)
-    // Ponderación: Wellness 40% + Tonelaje 30% + Cardio 30%
+    // CÁLCULO DINÁMICO CLIENTE DEL PGA ACTUAL (%) (Telemetría de Readiness)
+    // Ponderación: Wellness 40% + Tonelaje 30% + Cardio/Sesiones 30%
     // =========================================================================
     const wellScoreEffective = avgWellness > 0 ? avgWellness : (lastWellness > 0 ? lastWellness : 20);
-    // Wellness component (40%): escala 0 a 30 normalizada
-    const pgaWellness = Math.min(100, (wellScoreEffective / 30) * 100) * 0.40;
+    // Wellness component (40% max): escala 0 a 30 normalizada
+    const pgaWellness = Math.min(40, (wellScoreEffective / 30) * 40);
 
-    // Tonelaje component (30%): volumen acumulado referencial
-    const targetTonnage = isGlobal ? 100000 : 15000;
-    const pgaTonelaje = Math.min(100, (tonnage / targetTonnage) * 100) * 0.30;
+    // Tonelaje component (30% max): volumen acumulado referencial según macrociclo
+    const targetTonnage = isGlobal ? (selectedCycle === 'Zeus' ? 100000 : 15000) : (selectedCycle === 'Zeus' ? 15000 : 2500);
+    const pgaTonelaje = Math.min(30, tonnage > 0 ? ((tonnage / targetTonnage) * 30) : (weekNum === 1 ? 25 : 10));
 
-    // Cardio component (30%): distancia cardio o adherencia de sesiones
-    const targetCardio = isGlobal ? 100 : 15;
-    const pgaCardio = Math.min(100, (cardioKm > 0 ? (cardioKm / targetCardio) * 100 : (workouts / (isGlobal ? 200 : 25)) * 100)) * 0.30;
+    // Cardio component (30% max): distancia cardio o adherencia de sesiones
+    const targetCardio = isGlobal ? (selectedCycle === 'Zeus' ? 100 : 15) : (selectedCycle === 'Zeus' ? 15 : 5);
+    const pgaCardio = Math.min(30, cardioKm > 0 ? ((cardioKm / targetCardio) * 30) : ((workouts / (isGlobal ? 30 : 5)) * 30));
 
     // PGA Final
     const pga = Math.min(100, Math.max(0, Math.round(pgaWellness + pgaTonelaje + pgaCardio)));
 
-    // Render KPI 1: PGA
+    // Render KPI 1: PGA y Micro-barras
     if (kpiPgaValue) kpiPgaValue.textContent = `${pga}%`;
     if (kpiPgaBar) kpiPgaBar.style.width = `${pga}%`;
     if (factorWellnessVal) factorWellnessVal.textContent = `${(Math.round(pgaWellness * 10) / 10).toFixed(1)}%`;
     if (factorTonelajeVal) factorTonelajeVal.textContent = `${(Math.round(pgaTonelaje * 10) / 10).toFixed(1)}%`;
     if (factorCardioVal) factorCardioVal.textContent = `${(Math.round(pgaCardio * 10) / 10).toFixed(1)}%`;
+
+    if (microBarWellness) {
+      microBarWellness.style.width = `${Math.min(100, (pgaWellness / 40) * 100)}%`;
+    }
+    if (microBarTonelaje) {
+      microBarTonelaje.style.width = `${Math.min(100, (pgaTonelaje / 30) * 100)}%`;
+    }
+    if (microBarCardio) {
+      microBarCardio.style.width = `${Math.min(100, (pgaCardio / 30) * 100)}%`;
+    }
 
     // Render KPI 2: Tonelaje
     if (kpiTonelajeValue) {
@@ -2036,29 +2120,45 @@ document.addEventListener('DOMContentLoaded', () => {
     if (kpiTotalWorkouts) kpiTotalWorkouts.textContent = workouts.toLocaleString('es-ES');
     if (kpiTotalCardio) kpiTotalCardio.textContent = `${cardioKm.toFixed(1)} km`;
 
-    // Render KPI 3: Estado Operativo
+    // Render KPI 3: Estado Operativo y Arco SVG
+    if (gaugeArcFill) {
+      // Longitud total del arco semicircular = 126
+      const offset = Math.max(0, Math.min(126, 126 - (126 * (pga / 100))));
+      gaugeArcFill.style.strokeDashoffset = offset;
+      if (pga >= 80) {
+        gaugeArcFill.style.stroke = '#10b981';
+      } else if (pga >= 60) {
+        gaugeArcFill.style.stroke = '#38bdf8';
+      } else {
+        gaugeArcFill.style.stroke = '#ef4444';
+      }
+    }
+    if (gaugeScoreText) {
+      gaugeScoreText.textContent = `${pga}%`;
+    }
+
     if (kpiStatusBadge && kpiStatusText && kpiStatusDesc) {
       kpiStatusBadge.classList.remove('status-optimo', 'status-estable', 'status-precaucion');
 
       if (pga >= 80) {
         kpiStatusBadge.classList.add('status-optimo');
         kpiStatusText.textContent = '⚡ ÓPTIMO';
-        kpiStatusDesc.textContent = 'Capacidad neuromuscular y recuperación óptimas. Atleta preparado para alta intensidad y pruebas de RM.';
+        kpiStatusDesc.textContent = 'Capacidad neuromuscular y recuperación óptimas. Atleta preparado para alta intensidad y cargas del ciclo ' + selectedCycle + '.';
       } else if (pga >= 60) {
         kpiStatusBadge.classList.add('status-estable');
         kpiStatusText.textContent = '⚖️ ESTABLE';
-        kpiStatusDesc.textContent = 'Carga y recuperación equilibradas. Proceder con el plan prescrito manteniendo buena hidratación y descanso.';
+        kpiStatusDesc.textContent = 'Carga y recuperación equilibradas. Proceder con las sesiones prescritas en la Semana ' + weekNum + ' de ' + selectedCycle + '.';
       } else {
         kpiStatusBadge.classList.add('status-precaucion');
         kpiStatusText.textContent = '⚠️ PRECAUCIÓN';
-        kpiStatusDesc.textContent = 'Fatiga acumulada detectada o Wellness crítico (<21). Se prescribe autorregulación y limitar volumen axial.';
+        kpiStatusDesc.textContent = 'Fatiga acumulada detectada o Wellness matutino bajo (<21). Se prescribe autorregulación y limitar volumen axial.';
       }
     }
 
     // Render Gráficos
     renderWellnessTrendChart(data.wellnessHistory || []);
     renderZonasCargaChart(data.zonasCarga || {});
-    renderRmsGrid(data.rms || {});
+    renderRmsGrid(data.rms || {}, data.rmDeltas || {}, selectedCycle);
 
     // Badges complementarios
     if (chartWellnessAvg) {
@@ -2104,7 +2204,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const ctx = canvas.getContext('2d');
     const gradient = ctx.createLinearGradient(0, 0, 0, 240);
-    gradient.addColorStop(0, 'rgba(56, 189, 248, 0.35)');
+    gradient.addColorStop(0, 'rgba(56, 189, 248, 0.4)');
+    gradient.addColorStop(0.7, 'rgba(56, 189, 248, 0.08)');
     gradient.addColorStop(1, 'rgba(15, 23, 42, 0.0)');
 
     chartWellnessInstance = new Chart(ctx, {
@@ -2115,17 +2216,18 @@ document.addEventListener('DOMContentLoaded', () => {
           label: 'Wellness Score',
           data: scores,
           borderColor: '#38bdf8',
-          borderWidth: 2.5,
+          borderWidth: 3,
           backgroundColor: gradient,
           fill: true,
-          tension: 0.35,
+          tension: 0.4,
           pointBackgroundColor: '#38bdf8',
           pointBorderColor: '#0f172a',
           pointBorderWidth: 2,
-          pointRadius: 4,
-          pointHoverRadius: 6,
+          pointRadius: 4.5,
+          pointHoverRadius: 7,
           pointHoverBackgroundColor: '#fff',
-          pointHoverBorderColor: '#38bdf8'
+          pointHoverBorderColor: '#38bdf8',
+          pointHoverBorderWidth: 2.5
         }]
       },
       options: {
@@ -2136,10 +2238,13 @@ document.addEventListener('DOMContentLoaded', () => {
           tooltip: {
             backgroundColor: 'rgba(15, 23, 42, 0.95)',
             titleColor: '#38bdf8',
+            titleFont: { family: "'JetBrains Mono', monospace", size: 12, weight: '700' },
             bodyColor: '#f8fafc',
-            borderColor: 'rgba(56, 189, 248, 0.3)',
+            bodyFont: { family: "'JetBrains Mono', monospace", size: 13, weight: '600' },
+            borderColor: 'rgba(56, 189, 248, 0.35)',
             borderWidth: 1,
-            padding: 10,
+            padding: 12,
+            boxPadding: 4,
             displayColors: false,
             callbacks: {
               label: function(ctx) {
@@ -2150,14 +2255,21 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         scales: {
           x: {
-            grid: { color: 'rgba(255, 255, 255, 0.05)' },
-            ticks: { color: '#94a3b8', font: { size: 11 } }
+            grid: { color: 'rgba(255, 255, 255, 0.04)' },
+            ticks: {
+              color: '#94a3b8',
+              font: { family: "'JetBrains Mono', monospace", size: 10 }
+            }
           },
           y: {
             min: 0,
             max: 30,
-            grid: { color: 'rgba(255, 255, 255, 0.05)' },
-            ticks: { color: '#94a3b8', font: { size: 11 }, stepSize: 5 }
+            grid: { color: 'rgba(255, 255, 255, 0.04)' },
+            ticks: {
+              color: '#94a3b8',
+              font: { family: "'JetBrains Mono', monospace", size: 10 },
+              stepSize: 5
+            }
           }
         }
       }
@@ -2196,28 +2308,31 @@ document.addEventListener('DOMContentLoaded', () => {
           backgroundColor: bgColors,
           borderColor: '#0f172a',
           borderWidth: 3,
-          hoverOffset: 6
+          borderRadius: 6,
+          hoverOffset: 8
         }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        cutout: '68%',
+        cutout: '72%',
         plugins: {
           legend: { display: false },
           tooltip: {
             backgroundColor: 'rgba(15, 23, 42, 0.95)',
             titleColor: '#f8fafc',
+            titleFont: { family: "'Plus Jakarta Sans', sans-serif", size: 12, weight: '700' },
             bodyColor: '#cbd5e1',
-            borderColor: 'rgba(56, 189, 248, 0.3)',
+            bodyFont: { family: "'JetBrains Mono', monospace", size: 12, weight: '600' },
+            borderColor: 'rgba(56, 189, 248, 0.35)',
             borderWidth: 1,
-            padding: 10,
+            padding: 12,
             callbacks: {
               label: function(ctx) {
                 if (totalZonas === 0) return 'Sin registros de fuerza';
                 const val = ctx.parsed;
                 const pct = Math.round((val / totalZonas) * 100);
-                return `${ctx.label}: ${val} series (${pct}%)`;
+                return ` ${ctx.label}: ${val} series (${pct}%)`;
               }
             }
           }
@@ -2226,9 +2341,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function renderRmsGrid(rms) {
+  function renderRmsGrid(rms, rmDeltas, selectedCycle) {
     if (!dashboardRmsGrid) return;
     dashboardRmsGrid.innerHTML = '';
+
+    const currentCycle = selectedCycle || currentDashboardCycle || 'Atenea';
+    const isAtenea = (currentCycle === 'Atenea');
+
+    if (rmsCycleNameBadge) {
+      rmsCycleNameBadge.textContent = isAtenea ? '⚡ Atenea vs Zeus' : '🏛️ Zeus (Histórico)';
+    }
 
     const keys = Object.keys(rms || {});
     if (dashboardRmsCountPill) {
@@ -2236,33 +2358,76 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (keys.length === 0) {
-      dashboardRmsGrid.innerHTML = '<div class="rms-empty-msg">El atleta no posee marcas registradas aún.</div>';
+      dashboardRmsGrid.innerHTML = '<div class="rms-empty-msg">No se encontraron marcas registradas para el ciclo seleccionado.</div>';
       return;
     }
 
-    keys.sort().forEach(ej => {
+    // Levantamientos prioritarios al frente
+    const priorityLifts = ['Back Squat', 'Front Squat', 'Clean & Jerk', 'Snatch', 'Clean Squat', 'Jerk', 'Deadlift', 'Bench Press'];
+    keys.sort((a, b) => {
+      const idxA = priorityLifts.indexOf(a);
+      const idxB = priorityLifts.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
+    keys.forEach(ej => {
       const peso = parseFloat(rms[ej]) || 0;
+      let deltaBadgeHtml = '';
+
+      if (isAtenea && rmDeltas && rmDeltas[ej]) {
+        const delta = rmDeltas[ej];
+        if (delta && delta.zeus > 0) {
+          const diff = delta.diff;
+          if (diff > 0) {
+            deltaBadgeHtml = `<span class="rm-delta-badge delta-positive" title="Mejora vs Zeus: +${delta.diff} kg (+${delta.pctDiff}%)">+${delta.diff.toFixed(1)} kg vs Zeus</span>`;
+          } else if (diff === 0) {
+            deltaBadgeHtml = `<span class="rm-delta-badge delta-equal" title="Misma marca basal del Ciclo Zeus">= 0.0 kg vs Zeus</span>`;
+          } else {
+            deltaBadgeHtml = `<span class="rm-delta-badge delta-negative" title="Diferencia vs Zeus: ${delta.diff} kg">${delta.diff.toFixed(1)} kg vs Zeus</span>`;
+          }
+        } else if (delta && delta.current > 0) {
+          deltaBadgeHtml = `<span class="rm-delta-badge delta-positive" title="Nuevo levantamiento testeado en Ciclo Atenea">Nuevo</span>`;
+        }
+      } else if (!isAtenea) {
+        deltaBadgeHtml = `<span class="rm-delta-badge delta-equal" title="Marca basal histórica del Ciclo Zeus">Base Zeus</span>`;
+      }
+
       const tile = document.createElement('div');
       tile.className = 'rm-tile';
       tile.innerHTML = `
         <span class="rm-tile-name" title="${ej}">${ej}</span>
-        <span class="rm-tile-weight">${peso.toLocaleString('es-ES', { maximumFractionDigits: 1 })}<span>kg</span></span>
+        <div class="rm-tile-weight-row">
+          <span class="rm-tile-weight">${peso.toLocaleString('es-ES', { maximumFractionDigits: 1 })}<span>kg</span></span>
+          ${deltaBadgeHtml}
+        </div>
       `;
       dashboardRmsGrid.appendChild(tile);
     });
   }
 
   // Listeners para el Dashboard
+  if (filtroCiclo) {
+    filtroCiclo.addEventListener('change', (e) => {
+      currentDashboardCycle = e.target.value;
+      loadDashboardData(currentDashboardAthlete, currentDashboardCycle);
+    });
+  }
+
   if (dashboardAthleteSelect) {
     dashboardAthleteSelect.addEventListener('change', (e) => {
-      loadDashboardData(e.target.value);
+      currentDashboardAthlete = e.target.value;
+      loadDashboardData(currentDashboardAthlete, currentDashboardCycle);
     });
   }
 
   if (btnRefreshDashboard) {
     btnRefreshDashboard.addEventListener('click', () => {
-      const selected = dashboardAthleteSelect ? dashboardAthleteSelect.value : currentDashboardAthlete;
-      loadDashboardData(selected);
+      const selectedAth = dashboardAthleteSelect ? dashboardAthleteSelect.value : currentDashboardAthlete;
+      const selectedCyc = filtroCiclo ? filtroCiclo.value : currentDashboardCycle;
+      loadDashboardData(selectedAth, selectedCyc);
     });
   }
 });

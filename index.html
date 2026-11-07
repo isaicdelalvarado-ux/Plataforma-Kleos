@@ -24,9 +24,10 @@
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e6b422' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 6C5 9 5 13 8 16M17 6C19 9 19 13 16 16M12 3V21M9 4L12 2L15 4M8 10L12 8L16 10M8 17L12 15L16 17'/%3E%3C/svg%3E">
   <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%2306080c'/%3E%3Cpath d='M30 30C20 45 20 65 35 80M70 30C80 45 80 65 65 80M50 15V85M35 20L50 10L65 20M30 50L50 40L70 50M30 75L50 65L70 75' stroke='%23e6b422' stroke-width='6' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E">
 
-  <!-- Tipografías de Google: Cinzel (Espíritu Griego Heroico) y Plus Jakarta Sans -->
+  <!-- Tipografías Técnicas & de Telemetría: Plus Jakarta Sans y JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=JetBrains+Mono:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- Cache control para forzar actualización instantánea en móviles de atletas -->
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
@@ -672,31 +673,81 @@
               <p class="dashboard-subtitle">Monitorización en tiempo real de Fatiga (Wellness), Tonelaje Acumulado y Zonas de Carga %1RM.</p>
             </div>
 
-            <!-- Controles: Selector de Atleta Dinámico + Botón de Recarga -->
+            <!-- Command Bar Premium: Selector de Ciclo, Selector de Atleta, Progreso y Acciones -->
             <div class="dashboard-controls-bar">
-              <div class="dashboard-select-group">
-                <label for="dashboardAthleteSelect">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                    <circle cx="12" cy="7" r="4"/>
-                  </svg>
-                  Atleta:
-                </label>
-                <div class="select-wrapper">
-                  <select id="dashboardAthleteSelect" aria-label="Seleccionar atleta para el dashboard">
-                    <option value="todos">🌟 Todos los Atletas (Consolidado Global)</option>
-                  </select>
+              <div class="controls-left-group">
+                <!-- Selector de Macrociclo (Atenea / Zeus) -->
+                <div class="dashboard-select-group macro-select-group">
+                  <label for="filtro-ciclo">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                    </svg>
+                    Ciclo:
+                  </label>
+                  <div class="select-wrapper">
+                    <select id="filtro-ciclo" aria-label="Seleccionar macrociclo">
+                      <option value="Atenea" selected>⚡ Ciclo Atenea · Activo</option>
+                      <option value="Zeus">🏛️ Ciclo Zeus · Histórico</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Selector de Atleta Dinámico -->
+                <div class="dashboard-select-group athlete-select-group">
+                  <label for="dashboardAthleteSelect">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                      <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                    Atleta:
+                  </label>
+                  <div class="select-wrapper">
+                    <select id="dashboardAthleteSelect" aria-label="Seleccionar atleta para el dashboard">
+                      <option value="todos">🌟 Todos los Atletas (Consolidado Global)</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
-              <button type="button" id="btnRefreshDashboard" class="btn-refresh-dashboard" title="Actualizar datos desde Google Apps Script">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" class="spin-icon">
-                  <polyline points="23 4 23 10 17 10"/>
-                  <polyline points="1 20 1 14 7 14"/>
-                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-                </svg>
-                <span>Actualizar</span>
-              </button>
+              <!-- Indicador visual de Fase y Progreso de 12 Semanas -->
+              <div class="controls-center-group">
+                <div class="macro-progress-box">
+                  <div class="macro-phase-title">
+                    <span id="phaseTitleText">Fase: Acumulación (70-75% 1RM) · Sem 1/12</span>
+                  </div>
+                  <div class="macro-segmented-bar" id="macroSegmentedBar" title="Progreso de 12 semanas del macrociclo">
+                    <span class="macro-seg-block active" data-week="1"></span>
+                    <span class="macro-seg-block" data-week="2"></span>
+                    <span class="macro-seg-block" data-week="3"></span>
+                    <span class="macro-seg-block" data-week="4"></span>
+                    <span class="macro-seg-block" data-week="5"></span>
+                    <span class="macro-seg-block" data-week="6"></span>
+                    <span class="macro-seg-block" data-week="7"></span>
+                    <span class="macro-seg-block" data-week="8"></span>
+                    <span class="macro-seg-block" data-week="9"></span>
+                    <span class="macro-seg-block" data-week="10"></span>
+                    <span class="macro-seg-block" data-week="11"></span>
+                    <span class="macro-seg-block" data-week="12"></span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="controls-right-group">
+                <!-- Timestamp en vivo con punto verde pulsante -->
+                <div class="dashboard-live-indicator">
+                  <span class="pulse-dot"></span>
+                  <span id="dashboardLastUpdatedText">Última sinc: En vivo</span>
+                </div>
+
+                <button type="button" id="btnRefreshDashboard" class="btn-refresh-dashboard" title="Actualizar datos desde Google Apps Script">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" class="spin-icon">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <polyline points="1 20 1 14 7 14"/>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                  </svg>
+                  <span>Actualizar</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -716,12 +767,12 @@
               <span class="badge-atleta-tag" id="dashboardAthleteTag">Consolidado General</span>
             </div>
             <div class="banner-meta-info">
-              <span id="dashboardLastUpdatedText">Última sincronización: En vivo</span>
+              <span class="badge-cycle-tag" id="dashboardCycleBadge">⚡ Atenea · Semana 1</span>
             </div>
           </div>
 
-          <!-- FILA 1: TARJETAS DE KPI (MÉTRICAS CLAVE) -->
-          <div class="kpi-cards-grid">
+          <!-- FILA 1: BENTO GRID SUPERIOR (3 COLUMNAS SIMÉTRICAS) -->
+          <div class="kpi-cards-grid bento-3-col">
             
             <!-- KPI 1: PGA ACTUAL (%) -->
             <div class="kpi-card kpi-pga-card">
@@ -737,16 +788,31 @@
               </div>
               <div class="kpi-pga-breakdown">
                 <div class="pga-factor">
-                  <span class="factor-name">Wellness (40%)</span>
-                  <span class="factor-val" id="factorWellnessVal">0%</span>
+                  <div class="factor-header">
+                    <span class="factor-name">Wellness (40%)</span>
+                    <span class="factor-val" id="factorWellnessVal">0%</span>
+                  </div>
+                  <div class="micro-progress-track">
+                    <div class="micro-progress-fill fill-wellness" id="microBarWellness" style="width: 0%;"></div>
+                  </div>
                 </div>
                 <div class="pga-factor">
-                  <span class="factor-name">Tonelaje (30%)</span>
-                  <span class="factor-val" id="factorTonelajeVal">0%</span>
+                  <div class="factor-header">
+                    <span class="factor-name">Tonelaje (30%)</span>
+                    <span class="factor-val" id="factorTonelajeVal">0%</span>
+                  </div>
+                  <div class="micro-progress-track">
+                    <div class="micro-progress-fill fill-tonelaje" id="microBarTonelaje" style="width: 0%;"></div>
+                  </div>
                 </div>
                 <div class="pga-factor">
-                  <span class="factor-name">Cardio/Sesiones (30%)</span>
-                  <span class="factor-val" id="factorCardioVal">0%</span>
+                  <div class="factor-header">
+                    <span class="factor-name">Cardio/Sesiones (30%)</span>
+                    <span class="factor-val" id="factorCardioVal">0%</span>
+                  </div>
+                  <div class="micro-progress-track">
+                    <div class="micro-progress-fill fill-cardio" id="microBarCardio" style="width: 0%;"></div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -776,16 +842,25 @@
               </div>
             </div>
 
-            <!-- KPI 3: ESTADO OPERATIVO (BADGE DINÁMICO) -->
+            <!-- KPI 3: ESTADO OPERATIVO (ARCO VISUAL & BADGE NEÓN) -->
             <div class="kpi-card kpi-status-card">
               <div class="kpi-card-header">
                 <span class="kpi-badge status-tag">ESTADO</span>
                 <span class="kpi-title">Estado Operativo</span>
               </div>
               <div class="kpi-status-container">
-                <div class="status-pill status-optimo" id="kpiStatusBadge">
-                  <span class="status-indicator-dot"></span>
-                  <span id="kpiStatusText">Calculando...</span>
+                <div class="status-meter-box">
+                  <div class="gauge-arc-wrapper">
+                    <svg class="gauge-svg" viewBox="0 0 100 55">
+                      <path class="gauge-bg" d="M10 50 A 40 40 0 0 1 90 50" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="8" stroke-linecap="round"/>
+                      <path class="gauge-val" id="gaugeArcFill" d="M10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#10b981" stroke-width="8" stroke-linecap="round" stroke-dasharray="126" stroke-dashoffset="20"/>
+                    </svg>
+                    <span class="gauge-score-label" id="gaugeScoreText">--%</span>
+                  </div>
+                  <div class="status-pill status-optimo" id="kpiStatusBadge">
+                    <span class="status-indicator-dot"></span>
+                    <span id="kpiStatusText">Calculando...</span>
+                  </div>
                 </div>
                 <p class="status-recommendation" id="kpiStatusDesc">
                   Analizando parámetros de fatiga y volumen acumulado...
@@ -880,14 +955,14 @@
 
           </div>
 
-          <!-- FILA 3: MARCAS 1RM RECIENTES & RÉCORDS -->
+          <!-- FILA 3: MARCAS 1RM RECIENTES & TELEMETRÍA COMPARATIVA (ATENEA VS ZEUS) -->
           <div class="dashboard-rms-block glass-panel">
             <div class="rms-block-header">
               <div class="rms-title-wrap">
                 <span class="rms-icon">🏆</span>
                 <div>
-                  <h3 class="rms-heading">Marcas de 1RM Activas & Históricas</h3>
-                  <p class="rms-subheading">Valores de referencia para el cálculo de porcentaje de carga e intensidades.</p>
+                  <h3 class="rms-heading">Marcas de 1RM & Telemetría (<span id="rmsCycleNameBadge">⚡ Atenea vs Zeus</span>)</h3>
+                  <p class="rms-subheading">Valores consolidados con delta comparativo de mejora respecto al ciclo anterior.</p>
                 </div>
               </div>
               <div class="rms-count-pill" id="dashboardRmsCountPill">0 RMs Registrados</div>

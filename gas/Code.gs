@@ -46,8 +46,10 @@ var TABS = {
   WELLNESS: "Wellness",
   REGISTRO_DIARIO: "Registro_Diario",
   NOMBRE_ATLETAS: "Nombre de Atletas",
-  RM_ATLETAS: "RM_Atletas",         // Pestaña Base Intacta (Ciclo 1)
-  RM_CICLO_2: "RM_Ciclo_02",        // Pestaña Nueva de RM (Ciclo 2)
+  RM_ATLETAS: "RM_Atletas",         // Pestaña Base Intacta
+  RM_ZEUS: "RM_Zeus",               // Macrociclo 1 (Zeus - Histórico)
+  RM_ATENEA: "RM_Atenea",           // Macrociclo 2 (Atenea - Activo)
+  RM_CICLO_2: "RM_Atenea",          // Alias de compatibilidad
   HISTORIAL_RMS: "Historial_RMs",
   CONTROL_CICLO: "Control_Ciclo",
   LOG_SCRIPT: "Log_Script"
@@ -736,28 +738,34 @@ function doGet(e) {
 
     // =========================================================================
     // API DE LECTURA DE DASHBOARD & CONSOLIDACIÓN (REEMPLAZO DE LOOKER STUDIO)
-    // Parámetro ?atleta=Nombre+Del+Atleta (o 'todos' / vacío para consolidado global)
+    // Parámetro ?atleta=Nombre+Del+Atleta & ?ciclo=Atenea|Zeus
     // =========================================================================
     var athleteParam = "";
+    var cycleParam = "";
     if (e && e.parameter) {
       athleteParam = e.parameter.atleta || e.parameter.athlete || e.parameter.nombre || "";
+      cycleParam = e.parameter.ciclo || e.parameter.cycle || "";
     }
 
     // Si viene acción getAthletes explícita y solo requiere lista básica
     if (e && e.parameter && e.parameter.action === "getAthletes") {
       var athOnly = getAthletesList(ss);
-      var rmOnly = getRmData(ss);
+      var effectiveCycle = cycleParam || getActiveCycle(ss);
+      var rmOnly = getRmData(ss, effectiveCycle);
+      var avCycles = getAvailableCycles(ss);
       return ContentService.createTextOutput(JSON.stringify({
         status: "ok",
         athletes: athOnly,
         rmData: rmOnly,
         activeCycle: getActiveCycle(ss),
-        currentWeek: getCurrentWeek(ss)
+        selectedCycle: effectiveCycle,
+        currentWeek: getCurrentWeek(ss),
+        availableCycles: avCycles
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // Consolidado completo del Dashboard (por Atleta o Global)
-    var dashboardResponse = getAthleteDashboardData(ss, athleteParam);
+    // Consolidado completo del Dashboard (por Atleta o Global y filtrado por Ciclo)
+    var dashboardResponse = getAthleteDashboardData(ss, athleteParam, cycleParam);
 
     return ContentService.createTextOutput(JSON.stringify(dashboardResponse))
       .setMimeType(ContentService.MimeType.JSON);
@@ -785,19 +793,32 @@ function doGet(e) {
  * 2. 'Wellness': Registros históricos cronológicos para mapear la fatiga y score.
  * 3. 'Historial_RMs' y 'RM_Atletas': Marcas de 1RM más recientes y cálculo de intensidad.
  */
-function getAthleteDashboardData(ss, athleteParam) {
+/**
+ * ============================================================================
+ * EXTRACCIÓN Y CONSOLIDACIÓN ANALÍTICA DE ATLETAS (DASHBOARD NATIVO KLEOS)
+ * ============================================================================
+ * Consolida en una sola pasada en memoria los datos de:
+ * 1. 'Registro_Diario': Tonelaje Total, total reps, ejercicios, cardio km, zonas %1RM.
+ * 2. 'Wellness': Registros históricos cronológicos para mapear la fatiga y score.
+ * 3. 'Historial_RMs', 'RM_Atenea' y 'RM_Zeus': Marcas de 1RM y deltas comparativos.
+ */
+function getAthleteDashboardData(ss, athleteParam, cycleParam) {
   var isGlobal = (!athleteParam || String(athleteParam).trim() === "" ||
                   String(athleteParam).toLowerCase() === "todos" ||
                   String(athleteParam).toLowerCase() === "all" ||
                   String(athleteParam).toLowerCase() === "global");
   var targetNorm = isGlobal ? "" : String(athleteParam).trim().toLowerCase();
 
-  var athletes = getAthletesList(ss);
-  var rmData = getRmData(ss);
   var activeCycle = getActiveCycle(ss);
-  var currentWeek = getCurrentWeek(ss);
+  var selectedCycle = (cycleParam && String(cycleParam).trim()) ? String(cycleParam).trim() : activeCycle;
+  var currentWeek = (selectedCycle.toLowerCase() === activeCycle.toLowerCase()) ? getCurrentWeek(ss) : (selectedCycle.toLowerCase() === "zeus" ? 12 : 1);
+  var availableCycles = getAvailableCycles(ss);
 
-  // 1. Extraer datos de 'Registro_Diario'
+  var athletes = getAthletesList(ss);
+  var rmData = getRmData(ss, selectedCycle);
+  var rmDataZeus = getRmData(ss, "Zeus"); // Referencia basal para calcular deltas
+
+  // 1. Extraer datos de 'Registro_Diario' filtrados por el ciclo seleccionado
   var totalTonelaje = 0;
   var totalReps = 0;
   var totalWorkouts = 0;
@@ -814,7 +835,6 @@ function getAthleteDashboardData(ss, athleteParam) {
   if (regSheet) {
     var lastRow = regSheet.getLastRow();
     if (lastRow > 1) {
-      // Leer columnas A hasta Z
       var regValues = regSheet.getRange(2, 1, lastRow - 1, 26).getValues();
       for (var i = 0; i < regValues.length; i++) {
         var row = regValues[i];
@@ -822,6 +842,12 @@ function getAthleteDashboardData(ss, athleteParam) {
         if (!rowAth) continue;
 
         if (!isGlobal && rowAth.toLowerCase() !== targetNorm) {
+          continue;
+        }
+
+        // Filtro por macrociclo
+        var rowCycle = (row[25] || "").toString().trim();
+        if (!matchesCycle(rowCycle, selectedCycle)) {
           continue;
         }
 
@@ -840,7 +866,6 @@ function getAthleteDashboardData(ss, athleteParam) {
           if (dist >= 100) dist = dist / 1000;
           totalCardioKm += (series > 0 ? (series * dist) : dist);
         } else {
-          // Fuerza / Levantamiento / Metcon
           var ton = (series > 0 && reps > 0 && carga > 0) ? (series * reps * carga) : 0;
           if (ton === 0 && row[12]) {
             ton = parseFloat(String(row[12]).replace(',', '.').replace(/ /g, '')) || 0;
@@ -894,6 +919,9 @@ function getAthleteDashboardData(ss, athleteParam) {
           continue;
         }
 
+        var wCycle = (wRow[12] || "").toString().trim();
+        var isOfCycle = matchesCycle(wCycle, selectedCycle);
+
         var fObj = wRow[8];
         var fechaStr = "";
         if (fObj instanceof Date) {
@@ -918,7 +946,7 @@ function getAthleteDashboardData(ss, athleteParam) {
           score = sueno + energia + dolor + estres + animo;
         }
 
-        if (score > 0) {
+        if (score > 0 && isOfCycle) {
           wellnessScores.push(score);
           wellnessHistory.push({
             fecha: fechaStr,
@@ -937,25 +965,55 @@ function getAthleteDashboardData(ss, athleteParam) {
     }
   }
 
-  // Tomar los últimos 15 registros para la tendencia gráfica cronológica
+  // Fallback si apenas inicia el ciclo (ej. Atenea Semana 1): tomar registros recientes para readiness
+  if (wellnessScores.length === 0 && wellSheet && wellSheet.getLastRow() > 1) {
+    var fbMax = Math.min(15, wellSheet.getLastRow() - 1);
+    var startRow = Math.max(2, wellSheet.getLastRow() - fbMax + 1);
+    var fallbackValues = wellSheet.getRange(startRow, 1, fbMax, 13).getValues();
+    for (var fb = 0; fb < fallbackValues.length; fb++) {
+      var fbRow = fallbackValues[fb];
+      var fbAth = (fbRow[7] || "").toString().trim();
+      if (!isGlobal && fbAth.toLowerCase() !== targetNorm) continue;
+      var fbScore = parseFloat(String(fbRow[9]).replace(',', '.')) || 0;
+      if (fbScore > 0) {
+        wellnessScores.push(fbScore);
+        wellnessHistory.push({
+          fecha: fbRow[8] instanceof Date ? formatDateISO(fbRow[8]) : String(fbRow[8] || "").trim(),
+          score: fbScore,
+          sueno: parseFloat(fbRow[1]) || 0,
+          energia: parseFloat(fbRow[2]) || 0,
+          dolor: parseFloat(fbRow[3]) || 0,
+          estres: parseFloat(fbRow[4]) || 0,
+          animo: parseFloat(fbRow[5]) || 0,
+          horasSueno: parseFloat(fbRow[6]) || 0,
+          zonas: String(fbRow[10] || "").trim(),
+          notas: String(fbRow[11] || "").trim()
+        });
+      }
+    }
+  }
+
   var recentWellness = (wellnessHistory.length > 15) ? wellnessHistory.slice(wellnessHistory.length - 15) : wellnessHistory;
   var avgWellness = wellnessScores.length > 0 ? (wellnessScores.reduce(function(a, b) { return a + b; }, 0) / wellnessScores.length) : 0;
   var lastWellnessScore = wellnessScores.length > 0 ? wellnessScores[wellnessScores.length - 1] : 0;
 
-  // 3. Extraer marcas de 1RM más recientes
+  // 3. Extraer marcas de 1RM del ciclo seleccionado
   var athleteRms = {};
+  var athleteZeusRms = {};
+
   if (!isGlobal && rmData[athleteParam]) {
     athleteRms = JSON.parse(JSON.stringify(rmData[athleteParam]));
+    athleteZeusRms = (rmDataZeus && rmDataZeus[athleteParam]) ? JSON.parse(JSON.stringify(rmDataZeus[athleteParam])) : {};
   } else if (!isGlobal) {
-    // Búsqueda insensible a mayúsculas
     for (var aKey in rmData) {
       if (aKey.toLowerCase() === targetNorm) {
         athleteRms = JSON.parse(JSON.stringify(rmData[aKey]));
+        athleteZeusRms = (rmDataZeus && rmDataZeus[aKey]) ? JSON.parse(JSON.stringify(rmDataZeus[aKey])) : {};
         break;
       }
     }
   } else {
-    // Consolidado global: RMs máximos registrados en el box
+    // Consolidado global: RMs máximos registrados en el box para este ciclo
     for (var athName in rmData) {
       for (var ejKey in rmData[athName]) {
         var rmVal = parseFloat(rmData[athName][ejKey]) || 0;
@@ -964,9 +1022,35 @@ function getAthleteDashboardData(ss, athleteParam) {
         }
       }
     }
+    // Consolidado global Zeus para deltas
+    for (var athName in rmDataZeus) {
+      for (var ejKey in rmDataZeus[athName]) {
+        var rmZVal = parseFloat(rmDataZeus[athName][ejKey]) || 0;
+        if (rmZVal > 0) {
+          athleteZeusRms[ejKey] = Math.max(rmZVal, athleteZeusRms[ejKey] || 0);
+        }
+      }
+    }
   }
 
-  // Revisar 'Historial_RMs' para actualizar con cualquier récord reciente
+  // Calcular Deltas vs Zeus para cada ejercicio
+  var rmDeltas = {};
+  for (var ej in athleteRms) {
+    var valCurrent = parseFloat(athleteRms[ej]) || 0;
+    var valZeus = parseFloat(athleteZeusRms[ej]) || 0;
+    var diff = valZeus > 0 ? (valCurrent - valZeus) : 0;
+    var pctDiff = valZeus > 0 ? ((diff / valZeus) * 100) : 0;
+    rmDeltas[ej] = {
+      current: valCurrent,
+      zeus: valZeus,
+      diff: Math.round(diff * 10) / 10,
+      pctDiff: Math.round(pctDiff * 10) / 10,
+      isPositive: (diff > 0),
+      isEqual: (diff === 0)
+    };
+  }
+
+  // Revisar 'Historial_RMs' para actualizar con cualquier récord reciente del ciclo seleccionado
   var histSheet = ss.getSheetByName(TABS.HISTORIAL_RMS);
   if (histSheet) {
     var lastHistRow = histSheet.getLastRow();
@@ -976,6 +1060,9 @@ function getAthleteDashboardData(ss, athleteParam) {
         var hRow = histValues[h];
         var hAth = (hRow[0] || "").toString().trim();
         if (!hAth) continue;
+
+        var hCycle = (hRow[4] || "").toString().trim();
+        if (!matchesCycle(hCycle, selectedCycle)) continue;
 
         if (isGlobal || hAth.toLowerCase() === targetNorm) {
           var hEj = (hRow[2] || "").toString().trim();
@@ -992,13 +1079,15 @@ function getAthleteDashboardData(ss, athleteParam) {
 
   return {
     status: "ok",
-    version: "20.0.0",
+    version: "21.0.0",
     atleta: isGlobal ? "Todos los Atletas" : athleteParam,
     isGlobal: isGlobal,
     athletes: athletes,
     rmData: rmData,
     activeCycle: activeCycle,
+    selectedCycle: selectedCycle,
     currentWeek: currentWeek,
+    availableCycles: availableCycles,
     kpis: {
       totalTonelaje: Math.round(totalTonelaje * 10) / 10,
       totalReps: Math.round(totalReps),
@@ -1011,9 +1100,49 @@ function getAthleteDashboardData(ss, athleteParam) {
     wellnessHistory: recentWellness,
     zonasCarga: zonasCarga,
     rms: athleteRms,
+    rmDeltas: rmDeltas,
     intensidadPromedio: Math.round(avgIntensidad * 10) / 10,
     timestamp: new Date().toISOString()
   };
+}
+
+/**
+ * Normaliza y evalúa si una fila pertenece al ciclo consultado
+ */
+function matchesCycle(rowCycle, targetCycle) {
+  var r = String(rowCycle || "").toLowerCase().trim();
+  var t = String(targetCycle || "").toLowerCase().trim();
+  if (r === t) return true;
+  if ((t === "zeus" || t === "ciclo_01" || t === "1") && (r === "zeus" || r === "ciclo_01" || r === "1" || r === "")) return true;
+  if ((t === "atenea" || t === "ciclo_02" || t === "2") && (r === "atenea" || r === "ciclo_02" || r === "2")) return true;
+  return false;
+}
+
+/**
+ * Lista de ciclos disponibles y metadatos de periodización
+ */
+function getAvailableCycles(ss) {
+  var active = getActiveCycle(ss);
+  return [
+    {
+      id: "Atenea",
+      name: "⚡ Ciclo Atenea · Activo",
+      status: (active.toLowerCase() === "atenea") ? "activo" : "histórico",
+      fase: "Fase: Acumulación (70-75% 1RM) · Sem 1/12",
+      badge: "Activo",
+      currentWeek: 1,
+      totalWeeks: 12
+    },
+    {
+      id: "Zeus",
+      name: "🏛️ Ciclo Zeus · Histórico",
+      status: (active.toLowerCase() === "zeus") ? "activo" : "cerrado",
+      fase: "Macrociclo 1 Cerrado · 12 Semanas Finalizadas",
+      badge: "Histórico",
+      currentWeek: 12,
+      totalWeeks: 12
+    }
+  ];
 }
 
 /**
@@ -1705,28 +1834,31 @@ function parseRmSheetValues(sheet) {
 }
 
 /**
- * LÓGICA DE LECTURA EN CASCADA (DOBLE PESTAÑA CON FALLBACK AUTOMÁTICO):
- * 1. Pestaña Base Intacta (Ciclo 1): 'RM_Atletas' (o 'Atletas_1RM')
- * 2. Pestaña Nueva de RM (Ciclo 2): 'RM_Ciclo_02'
- *
- * Cascada:
- * a) Consulta primero en la Pestaña Nueva de RM (Ciclo 2).
- * b) Si el valor existe y es > 0, usa ese nuevo RM.
- * c) Si está vacío o es 0, busca y devuelve automáticamente el RM de la Pestaña Anterior (Ciclo 1).
- * Jamás devuelve 0 kg si el ejercicio existía en la pestaña anterior.
+ * LÓGICA DE LECTURA DINÁMICA DE RMs CON CASCADA Y EQUIVALENCIA OLÍMPICA:
+ * - Ciclo 'Zeus' (o 'Ciclo_01'): Carga 'RM_Zeus' (o 'RM_Atletas').
+ * - Ciclo 'Atenea' (o 'Ciclo_02') u otro: Concatena dinámicamente 'RM_' + cycleName ('RM_Atenea').
+ * - Cascada: si un ejercicio no fue testeado en el ciclo actual, cae a la base de Zeus.
  */
-function getRmData(ss, activeCycle) {
+function getRmData(ss, cycleName) {
   if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  var targetCycle = cycleName || getActiveCycle(ss) || "Atenea";
 
-  // 1. Cargar Pestaña Base Intacta (Ciclo 1)
-  var baseSheet = ss.getSheetByName(TABS.RM_ATLETAS) || ss.getSheetByName("Atletas_1RM");
+  // 1. Cargar Pestaña Base Intacta (Zeus / Ciclo 1)
+  var baseSheet = ss.getSheetByName(TABS.RM_ZEUS) || ss.getSheetByName(TABS.RM_ATLETAS) || ss.getSheetByName("Atletas_1RM");
   var baseMap = parseRmSheetValues(baseSheet);
 
-  // 2. Cargar Pestaña Nueva de RM (Ciclo 2)
-  var c2Sheet = ss.getSheetByName(TABS.RM_CICLO_2) || ss.getSheetByName("RM_Atletas_Ciclo_02") || ss.getSheetByName("RM_Ciclo2");
-  var c2Map = parseRmSheetValues(c2Sheet);
+  // Si el ciclo solicitado es Zeus, devolvemos directamente la base de Zeus
+  if (targetCycle.toLowerCase() === "zeus" || targetCycle.toLowerCase() === "ciclo_01" || targetCycle.toLowerCase() === "1") {
+    return applyRmEquivalences(baseMap);
+  }
 
-  // 3. Fusión en Cascada: La base de Ciclo 1 es el cimiento completo
+  // 2. Cargar pestaña del ciclo solicitado dinámicamente ("RM_" + targetCycle)
+  var dynamicSheetName = "RM_" + targetCycle;
+  var cycleSheet = ss.getSheetByName(dynamicSheetName) ||
+                   (targetCycle.toLowerCase() === "atenea" ? (ss.getSheetByName("RM_Atenea") || ss.getSheetByName("RM_Ciclo_02")) : null);
+  var cycleMap = parseRmSheetValues(cycleSheet);
+
+  // 3. Fusión en Cascada: La base de Zeus es el cimiento completo
   var cascadeMap = {};
   for (var ath in baseMap) {
     cascadeMap[ath] = {};
@@ -1735,18 +1867,24 @@ function getRmData(ss, activeCycle) {
     }
   }
 
-  // Sobrescribir con marcas de Ciclo 2 ÚNICAMENTE si existen y son > 0
-  for (var ath in c2Map) {
+  // Sobrescribir con marcas del ciclo solicitado ÚNICAMENTE si existen y son > 0
+  for (var ath in cycleMap) {
     if (!cascadeMap[ath]) cascadeMap[ath] = {};
-    for (var ej in c2Map[ath]) {
-      var v = c2Map[ath][ej];
+    for (var ej in cycleMap[ath]) {
+      var v = cycleMap[ath][ej];
       if (v !== undefined && v !== null && !isNaN(v) && Number(v) > 0) {
         cascadeMap[ath][ej] = Number(v);
       }
     }
   }
 
-  // 4. REGLA DE EQUIVALENCIA ABSOLUTA DE 1RM: JERKS Y COMPLEX OLÍMPICOS
+  return applyRmEquivalences(cascadeMap);
+}
+
+/**
+ * Aplica reglas de equivalencia absoluta de 1RM: Jerks, Complex y Clean
+ */
+function applyRmEquivalences(cascadeMap) {
   for (var a in cascadeMap) {
     // Si Clean Squat existe, actualiza de inmediato la referencia de Clean Complex
     if (cascadeMap[a]["Clean Squat"]) {
@@ -1772,7 +1910,6 @@ function getRmData(ss, activeCycle) {
       if (!cascadeMap[a]["Snatch Complex"]) cascadeMap[a]["Snatch Complex"] = sVal;
     }
   }
-
   return cascadeMap;
 }
 
@@ -2496,22 +2633,17 @@ var CONFIG_KEYS = {
 
 /**
  * Obtiene el identificador del macrociclo activo.
- * Jerarquía: ScriptProperties -> Hoja 'Control_Ciclo' -> "Ciclo_01" por defecto.
+ * Jerarquía: Hoja 'Control_Ciclo' -> ScriptProperties -> "Atenea" por defecto.
  */
 function getActiveCycle(ss) {
   var props = PropertiesService.getScriptProperties();
-  var cycle = props ? props.getProperty(CONFIG_KEYS.ACTIVE_CYCLE) : null;
-  if (cycle && cycle.trim()) {
-    return cycle.trim();
-  }
-
   if (ss) {
     try {
       var cSheet = ss.getSheetByName(TABS.CONTROL_CICLO);
       if (cSheet && cSheet.getLastRow() >= 2) {
         var val = cSheet.getRange("B2").getValue();
         if (val && String(val).trim()) {
-          cycle = String(val).trim();
+          var cycle = String(val).trim();
           if (props) props.setProperty(CONFIG_KEYS.ACTIVE_CYCLE, cycle);
           return cycle;
         }
@@ -2519,7 +2651,12 @@ function getActiveCycle(ss) {
     } catch (_) {}
   }
 
-  var defaultCycle = "Ciclo_01";
+  var storedCycle = props ? props.getProperty(CONFIG_KEYS.ACTIVE_CYCLE) : null;
+  if (storedCycle && storedCycle.trim() && storedCycle.trim() !== "Ciclo_01" && storedCycle.trim() !== "Ciclo_02") {
+    return storedCycle.trim();
+  }
+
+  var defaultCycle = "Atenea";
   if (props) {
     try { props.setProperty(CONFIG_KEYS.ACTIVE_CYCLE, defaultCycle); } catch (_) {}
   }
@@ -2711,11 +2848,17 @@ function appendToHistorialRMs(ss, atleta, ejercicio, cargaRm, cicloToken) {
  * aplicando la regla de Upsert con Math.max (solo guarda si nuevoRm > registrado).
  */
 function actualizarMatrizRM(ss, atleta, ejercicio, nuevoRm) {
-  var targetTabName = TABS.RM_CICLO_2 || "RM_Ciclo_02";
+  var activeCycle = getActiveCycle(ss) || "Atenea";
+  var targetTabName = "RM_" + activeCycle;
   var sheet = ss.getSheetByName(targetTabName);
   if (!sheet) {
-    sheet = ss.insertSheet(targetTabName);
-    initRmCiclo2Headers(sheet);
+    if (activeCycle.toLowerCase() === "atenea") {
+      sheet = ss.getSheetByName("RM_Atenea") || ss.getSheetByName("RM_Ciclo_02");
+    }
+    if (!sheet) {
+      sheet = ss.insertSheet(targetTabName);
+      initRmCiclo2Headers(sheet);
+    }
   }
 
   var cleanRmVal = parseFloat(String(nuevoRm).replace(',', '.')) || 0;
