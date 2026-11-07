@@ -1748,22 +1748,28 @@ function getRmData(ss, activeCycle) {
 
   // 4. REGLA DE EQUIVALENCIA ABSOLUTA DE 1RM: JERKS Y COMPLEX OLÍMPICOS
   for (var a in cascadeMap) {
-    // Puente Jerks
-    var jVal = cascadeMap[a]["Jerk"] || cascadeMap[a]["Push Jerk"] || cascadeMap[a]["Split Jerk"];
+    // Si Clean Squat existe, actualiza de inmediato la referencia de Clean Complex
+    if (cascadeMap[a]["Clean Squat"]) {
+      cascadeMap[a]["Clean Complex"] = cascadeMap[a]["Clean Squat"];
+    } else if (cascadeMap[a]["Clean Complex"]) {
+      cascadeMap[a]["Clean Squat"] = cascadeMap[a]["Clean Complex"];
+    }
+
+    // Puente Jerk: Si Clean & Jerk existe y Jerk no está presente, alimenta a Jerk
+    var jVal = cascadeMap[a]["Jerk"] || cascadeMap[a]["Split Jerk"] || cascadeMap[a]["Push Jerk"] || cascadeMap[a]["Clean & Jerk"];
     if (jVal) {
       if (!cascadeMap[a]["Jerk"]) cascadeMap[a]["Jerk"] = jVal;
       if (!cascadeMap[a]["Push Jerk"]) cascadeMap[a]["Push Jerk"] = jVal;
       if (!cascadeMap[a]["Split Jerk"]) cascadeMap[a]["Split Jerk"] = jVal;
     }
+    if (!cascadeMap[a]["Clean & Jerk"] && cascadeMap[a]["Jerk"]) {
+      cascadeMap[a]["Clean & Jerk"] = cascadeMap[a]["Jerk"];
+    }
+
     // Puente Snatch Complex -> Snatch
     var sVal = cascadeMap[a]["Snatch"] || cascadeMap[a]["Snatch Complex"] || cascadeMap[a]["Power Snatch"];
     if (sVal) {
       if (!cascadeMap[a]["Snatch Complex"]) cascadeMap[a]["Snatch Complex"] = sVal;
-    }
-    // Puente Clean Complex -> Clean Squat
-    var cVal = cascadeMap[a]["Clean Squat"] || cascadeMap[a]["Clean Complex"] || cascadeMap[a]["Squat Clean"] || cascadeMap[a]["Clean"] || cascadeMap[a]["Clean & Jerk"];
-    if (cVal) {
-      if (!cascadeMap[a]["Clean Complex"]) cascadeMap[a]["Clean Complex"] = cVal;
     }
   }
 
@@ -2718,9 +2724,10 @@ function actualizarMatrizRM(ss, atleta, ejercicio, nuevoRm) {
   }
 
   var lastRow = sheet.getLastRow();
+  var canonicalExercise = getMotherExerciseKey(ejercicio) || ejercicio;
   var normAth = atleta.toLowerCase().trim();
   var normEj = ejercicio.toLowerCase().trim();
-  var motherEj = (getMotherExerciseKey(ejercicio) || ejercicio).toLowerCase().trim();
+  var motherEj = canonicalExercise.toLowerCase().trim();
 
   // Buscar si ya existe la fila en formato vertical [Atleta, Ejercicio, 1RM]
   if (lastRow > 1) {
@@ -2741,6 +2748,16 @@ function actualizarMatrizRM(ss, atleta, ejercicio, nuevoRm) {
         var cell = sheet.getRange(i + 1, 3);
         cell.setValue(finalVal);
         cell.setNumberFormat("#,##0.0");
+
+        // Sincronizaciones puente en RM_Ciclo_02:
+        if (canonicalExercise === 'Clean Squat' || rawE.toLowerCase().indexOf('clean squat') !== -1) {
+          actualizarFilaEspecificaRM(sheet, atleta, 'Clean Complex', finalVal);
+        } else if (canonicalExercise === 'Clean Complex' || rawE.toLowerCase().indexOf('clean complex') !== -1) {
+          actualizarFilaEspecificaRM(sheet, atleta, 'Clean Squat', finalVal);
+        } else if (canonicalExercise === 'Clean & Jerk' || rawE.toLowerCase().indexOf('clean & jerk') !== -1) {
+          actualizarFilaEspecificaRM(sheet, atleta, 'Jerk', finalVal);
+        }
+
         return {
           updated: true,
           mode: "upsert_max",
@@ -2757,10 +2774,19 @@ function actualizarMatrizRM(ss, atleta, ejercicio, nuevoRm) {
 
   // Si no existía para este atleta/ejercicio en Ciclo 2, insertar una sola fila limpia sin duplicados
   var nextRow = Math.max(2, lastRow + 1);
-  var canonicalExercise = getMotherExerciseKey(ejercicio) || ejercicio;
   sheet.getRange(nextRow, 1, 1, 3).setValues([[String(atleta).trim(), String(canonicalExercise).trim(), cleanRmVal]]);
   sheet.getRange(nextRow, 3).setNumberFormat("#,##0.0");
   ensureSingleCleanBottomRow(sheet, nextRow);
+
+  // Sincronizaciones puente en RM_Ciclo_02:
+  if (canonicalExercise === 'Clean Squat') {
+    actualizarFilaEspecificaRM(sheet, atleta, 'Clean Complex', cleanRmVal);
+  } else if (canonicalExercise === 'Clean Complex') {
+    actualizarFilaEspecificaRM(sheet, atleta, 'Clean Squat', cleanRmVal);
+  } else if (canonicalExercise === 'Clean & Jerk') {
+    actualizarFilaEspecificaRM(sheet, atleta, 'Jerk', cleanRmVal);
+  }
+
   return {
     updated: true,
     mode: "inserted_new",
@@ -2770,6 +2796,34 @@ function actualizarMatrizRM(ss, atleta, ejercicio, nuevoRm) {
     tab: targetTabName,
     finalVal: cleanRmVal
   };
+}
+
+/**
+ * Actualiza o inserta una fila específica en la hoja de RM de Ciclo 2
+ */
+function actualizarFilaEspecificaRM(sheet, atleta, targetEj, val) {
+  var lastRow = sheet.getLastRow();
+  var normAth = atleta.toLowerCase().trim();
+  var normEj = targetEj.toLowerCase().trim();
+  if (lastRow > 1) {
+    var values = sheet.getRange(1, 1, lastRow, 3).getValues();
+    for (var i = 1; i < values.length; i++) {
+      var aName = (values[i][0] || "").toString().toLowerCase().trim();
+      var eName = (values[i][1] || "").toString().toLowerCase().trim();
+      if (aName === normAth && eName === normEj) {
+        var existingVal = parseFloat(String(values[i][2]).replace(',', '.')) || 0;
+        var finalVal = Math.max(existingVal, val);
+        var cell = sheet.getRange(i + 1, 3);
+        cell.setValue(finalVal);
+        cell.setNumberFormat("#,##0.0");
+        return;
+      }
+    }
+  }
+  var nextRow = Math.max(2, sheet.getLastRow() + 1);
+  sheet.getRange(nextRow, 1, 1, 3).setValues([[String(atleta).trim(), targetEj, val]]);
+  sheet.getRange(nextRow, 3).setNumberFormat("#,##0.0");
+  ensureSingleCleanBottomRow(sheet, nextRow);
 }
 
 /**

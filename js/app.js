@@ -835,13 +835,19 @@ document.addEventListener('DOMContentLoaded', () => {
       const lookupKeys = [exercise, motherKey];
       if (motherKey === 'Jerk' || exercise === 'Jerk' || exercise.toLowerCase().indexOf('jerk') !== -1) {
         if (exercise.toLowerCase().indexOf('clean & jerk') === -1) {
-          lookupKeys.push('Jerk', 'Push Jerk', 'Split Jerk');
+          lookupKeys.push('Jerk', 'Push Jerk', 'Split Jerk', 'Clean & Jerk');
         }
+      }
+      if (motherKey === 'Clean & Jerk' || exercise === 'Clean & Jerk' || exercise.toLowerCase().indexOf('clean & jerk') !== -1) {
+        lookupKeys.push('Clean & Jerk', 'Jerk');
+      }
+      if (motherKey === 'Clean Complex' || exercise === 'Clean Complex' || exercise.toLowerCase().indexOf('clean complex') !== -1) {
+        lookupKeys.push('Clean Complex', 'Clean Squat');
       }
       if (motherKey === 'Snatch' || exercise === 'Snatch' || exercise === 'Snatch Complex' || exercise.toLowerCase().indexOf('snatch') !== -1) {
         lookupKeys.push('Snatch', 'Snatch Complex', 'Power Snatch');
       }
-      if (motherKey === 'Clean Squat' || exercise === 'Clean Squat' || exercise === 'Clean Complex' || exercise.toLowerCase().indexOf('clean') !== -1) {
+      if (motherKey === 'Clean Squat' || exercise === 'Clean Squat' || exercise.toLowerCase().indexOf('clean') !== -1) {
         lookupKeys.push('Clean Squat', 'Clean Complex', 'Squat Clean', 'Clean', 'Clean & Jerk', 'Power Clean');
       }
       for (const k of lookupKeys) {
