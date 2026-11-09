@@ -1084,9 +1084,97 @@ function getAthleteDashboardData(ss, athleteParam, cycleParam) {
 
   var avgIntensidad = intensidadesList.length > 0 ? (intensidadesList.reduce(function(a, b) { return a + b; }, 0) / intensidadesList.length) : 0;
 
+  // 4. Extraer y consolidar datos de 'Skills_Gimnasia' filtrados por ciclo y atleta
+  var gymTotalVolume = 0;
+  var gymRpeList = [];
+  var gymSkillsMap = {};
+
+  var gymSheet = ss.getSheetByName(TABS.SKILLS_GIMNASIA);
+  if (gymSheet) {
+    var lastGymRow = gymSheet.getLastRow();
+    if (lastGymRow > 1) {
+      // 10 columnas: [Fecha, Atleta, Skill_Movimiento, Nivel_Progresion, Max_Reps_Unbroken, Volumen_Total, RPE_Calidad, Ciclo, Semana, Notas]
+      var gymValues = gymSheet.getRange(2, 1, lastGymRow - 1, 10).getValues();
+      for (var g = 0; g < gymValues.length; g++) {
+        var gRow = gymValues[g];
+        var gFecha = gRow[0] ? (gRow[0] instanceof Date ? formatDateISO(gRow[0]) : String(gRow[0]).substring(0, 10)) : "";
+        var gAth = (gRow[1] || "").toString().trim();
+        if (!gAth) continue;
+
+        var gCycle = (gRow[7] || "").toString().trim();
+        if (!matchesCycle(gCycle, selectedCycle)) continue;
+
+        if (!isGlobal && gAth.toLowerCase() !== targetNorm) continue;
+
+        var gSkill = (gRow[2] || "").toString().trim();
+        if (!gSkill) continue;
+
+        var gProg = (gRow[3] || "Rx / Estándar").toString().trim();
+        var gMaxUnbroken = parseFloat(String(gRow[4]).replace(',', '.')) || 0;
+        var gVolTotal = parseFloat(String(gRow[5]).replace(',', '.')) || gMaxUnbroken;
+        var gRpe = parseFloat(String(gRow[6]).replace(',', '.')) || 0;
+        var gSemana = parseInt(gRow[8], 10) || 1;
+        var gNotas = (gRow[9] || "").toString().trim();
+
+        gymTotalVolume += gVolTotal;
+        if (gRpe > 0) gymRpeList.push(gRpe);
+
+        if (!gymSkillsMap[gSkill]) {
+          gymSkillsMap[gSkill] = {
+            skill: gSkill,
+            skillMovimiento: gSkill,
+            bestUnbroken: gMaxUnbroken,
+            maxRepsUnbroken: gMaxUnbroken,
+            progression: gProg,
+            nivelProgresion: gProg,
+            totalVolume: gVolTotal,
+            volumenAcumulado: gVolTotal,
+            lastDate: gFecha,
+            ultimaFecha: gFecha,
+            lastRpe: gRpe,
+            semana: gSemana,
+            notas: gNotas
+          };
+        } else {
+          var item = gymSkillsMap[gSkill];
+          item.bestUnbroken = Math.max(item.bestUnbroken, gMaxUnbroken);
+          item.maxRepsUnbroken = item.bestUnbroken;
+          item.totalVolume += gVolTotal;
+          item.volumenAcumulado = item.totalVolume;
+          if (gFecha && (!item.lastDate || gFecha >= item.lastDate)) {
+            item.lastDate = gFecha;
+            item.ultimaFecha = gFecha;
+            item.progression = gProg;
+            item.nivelProgresion = gProg;
+            item.lastRpe = gRpe;
+            item.semana = gSemana;
+            if (gNotas) item.notas = gNotas;
+          }
+        }
+      }
+    }
+  }
+
+  var topGymSkills = [];
+  for (var skKey in gymSkillsMap) {
+    topGymSkills.push(gymSkillsMap[skKey]);
+  }
+  topGymSkills.sort(function(a, b) {
+    return b.totalVolume - a.totalVolume;
+  });
+
+  var avgGymRpe = gymRpeList.length > 0 ? (gymRpeList.reduce(function(a, b) { return a + b; }, 0) / gymRpeList.length) : 0;
+
+  var gymnasticsSummary = {
+    totalVolume: Math.round(gymTotalVolume),
+    avgRpe: Math.round(avgGymRpe * 10) / 10,
+    countRecords: gymRpeList.length,
+    topSkills: topGymSkills
+  };
+
   return {
     status: "ok",
-    version: "21.0.0",
+    version: "22.0.0",
     atleta: isGlobal ? "Todos los Atletas" : athleteParam,
     isGlobal: isGlobal,
     athletes: athletes,
@@ -1108,6 +1196,7 @@ function getAthleteDashboardData(ss, athleteParam, cycleParam) {
     zonasCarga: zonasCarga,
     rms: athleteRms,
     rmDeltas: rmDeltas,
+    gymnastics: gymnasticsSummary,
     intensidadPromedio: Math.round(avgIntensidad * 10) / 10,
     timestamp: new Date().toISOString()
   };

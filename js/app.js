@@ -1953,6 +1953,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const legendDescargaVal = document.getElementById('legendDescargaVal');
   const legendHipertrofiaVal = document.getElementById('legendHipertrofiaVal');
   const legendFuerzaVal = document.getElementById('legendFuerzaVal');
+  const gymTotalVolumeBadge = document.getElementById('gymTotalVolumeBadge');
+  const gymAvgRpeBadge = document.getElementById('gymAvgRpeBadge');
+  const gymSkillsGrid = document.getElementById('gymSkillsGrid');
   const rmsCycleNameBadge = document.getElementById('rmsCycleNameBadge');
   const dashboardRmsGrid = document.getElementById('dashboardRmsGrid');
   const dashboardRmsCountPill = document.getElementById('dashboardRmsCountPill');
@@ -2188,9 +2191,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // Render Gráficos
+    // Render Gráficos y Módulos de Telemetría
     renderWellnessTrendChart(data.wellnessHistory || []);
     renderZonasCargaChart(data.zonasCarga || {});
+    renderGymnasticsGrid(data.gymnastics || {}, selectedCycle);
     renderRmsGrid(data.rms || {}, data.rmDeltas || {}, selectedCycle);
 
     // Badges complementarios
@@ -2371,6 +2375,83 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
       }
+    });
+  }
+
+  function renderGymnasticsGrid(gymData, selectedCycle) {
+    if (!gymSkillsGrid) return;
+    gymSkillsGrid.innerHTML = '';
+
+    const currentCycle = selectedCycle || currentDashboardCycle || 'Atenea';
+    const totalVol = gymData && gymData.totalVolume ? Number(gymData.totalVolume) : 0;
+    const avgRpe = gymData && gymData.avgRpe ? Number(gymData.avgRpe) : 0;
+    const skills = (gymData && Array.isArray(gymData.topSkills)) ? gymData.topSkills : [];
+
+    if (gymTotalVolumeBadge) {
+      gymTotalVolumeBadge.textContent = `Volumen Ciclo: ${totalVol.toLocaleString('es-ES')} reps`;
+    }
+    if (gymAvgRpeBadge) {
+      gymAvgRpeBadge.textContent = `Calidad / RPE Medio: ${avgRpe > 0 ? avgRpe.toFixed(1) : '--'}`;
+    }
+
+    // EMPTY STATE ELEGANTE: Si aún no hay registros en este filtro
+    if (skills.length === 0) {
+      gymSkillsGrid.innerHTML = `
+        <div class="gym-empty-state">
+          <span class="gym-empty-icon">🤸‍♂️</span>
+          <p class="gym-empty-text">Sin registros gimnásticos aún en este filtro &bull; Los datos de Max Unbroken y Progresiones aparecerán aquí en cuanto se registren sesiones de la Semana 1.</p>
+          <span class="gym-empty-tag">⚡ Ciclo ${currentCycle} &bull; Fase de Acumulación</span>
+        </div>
+      `;
+      return;
+    }
+
+    // Normalizador de volumen para las barras progresivas
+    const maxSkillVol = Math.max(...skills.map(s => s.totalVolume || s.volumenAcumulado || 1), 50);
+
+    skills.forEach(item => {
+      const skillName = item.skill || item.skillMovimiento || 'Skill';
+      const bestUnbroken = item.bestUnbroken || item.maxRepsUnbroken || 0;
+      const prog = item.progression || item.nivelProgresion || 'Rx / Estándar';
+      const vol = item.totalVolume || item.volumenAcumulado || 0;
+      const isDistance = skillName.toLowerCase().indexOf('walk') !== -1 || skillName.toLowerCase().indexOf('metros') !== -1;
+
+      // Código de color según progresión:
+      // Estricto / Strict / Rx / Lastre / Déficit -> prog-rx (Verde Neón #10b981)
+      // Butterfly / Kipping -> prog-kipping (Cian #38bdf8)
+      // Con Banda / Elástico / Escalonado / Cajón / Suelo -> prog-band (Ámbar #f59e0b)
+      const progLower = prog.toLowerCase();
+      let badgeClass = 'prog-kipping';
+      if (progLower.indexOf('rx') !== -1 || progLower.indexOf('estricto') !== -1 || progLower.indexOf('strict') !== -1 || progLower.indexOf('lastre') !== -1 || progLower.indexOf('déficit') !== -1) {
+        badgeClass = 'prog-rx';
+      } else if (progLower.indexOf('banda') !== -1 || progLower.indexOf('elástic') !== -1 || progLower.indexOf('cajón') !== -1 || progLower.indexOf('suelo') !== -1 || progLower.indexOf('negativa') !== -1) {
+        badgeClass = 'prog-band';
+      }
+
+      const barPct = Math.min(100, Math.max(12, Math.round((vol / maxSkillVol) * 100)));
+
+      const card = document.createElement('div');
+      card.className = 'gym-skill-card';
+      card.innerHTML = `
+        <div class="gym-skill-header">
+          <span class="gym-skill-name" title="${skillName}">${skillName}</span>
+          <span class="prog-badge ${badgeClass}" title="Nivel de progresión">${prog}</span>
+        </div>
+        <div class="gym-skill-body">
+          <div class="gym-unbroken-val">${bestUnbroken}<span>${isDistance ? 'm' : 'reps'}</span></div>
+          <span class="gym-unbroken-label">Max Unbroken</span>
+        </div>
+        <div class="gym-volume-bar-box">
+          <div class="gym-volume-info">
+            <span>Volumen Total:</span>
+            <strong>${vol.toLocaleString('es-ES')} ${isDistance ? 'm' : 'reps'}</strong>
+          </div>
+          <div class="gym-progress-track">
+            <div class="gym-progress-fill" style="width: ${barPct}%;"></div>
+          </div>
+        </div>
+      `;
+      gymSkillsGrid.appendChild(card);
     });
   }
 
