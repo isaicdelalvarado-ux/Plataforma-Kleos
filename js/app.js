@@ -749,18 +749,28 @@ document.addEventListener('DOMContentLoaded', () => {
         tabWellness.setAttribute('aria-selected', 'true');
       }
       if (panelWellness) panelWellness.classList.add('active');
+      localStorage.setItem('kleos_active_tab', 'wellness');
     } else if (target === 'wod') {
       if (tabWod) {
         tabWod.classList.add('active');
         tabWod.setAttribute('aria-selected', 'true');
       }
       if (panelWod) panelWod.classList.add('active');
+      localStorage.setItem('kleos_active_tab', 'wod');
     } else if (target === 'dashboard') {
       if (tabDashboard) {
         tabDashboard.classList.add('active');
         tabDashboard.setAttribute('aria-selected', 'true');
       }
       if (panelDashboard) panelDashboard.classList.add('active');
+      localStorage.setItem('kleos_active_tab', 'dashboard');
+
+      // Forzar visibilidad del bloque gimnástico y selector de ciclo
+      const gymBlock = document.getElementById('dashboardGymBlock');
+      if (gymBlock) {
+        gymBlock.style.display = 'block';
+        gymBlock.classList.remove('hidden');
+      }
 
       // Cargar datos del dashboard al entrar
       const curSelect = document.getElementById('dashboardAthleteSelect');
@@ -776,6 +786,35 @@ document.addEventListener('DOMContentLoaded', () => {
   if (tabWellness) tabWellness.addEventListener('click', () => switchSection('wellness'));
   if (tabWod) tabWod.addEventListener('click', () => switchSection('wod'));
   if (tabDashboard) tabDashboard.addEventListener('click', () => switchSection('dashboard'));
+
+  // Detección automática de pestaña inicial vía URL Hash (#dashboard), Query param (?view=dashboard) o Cache Local
+  function initTabRouting() {
+    const hash = (window.location.hash || '').toLowerCase();
+    const params = new URLSearchParams(window.location.search);
+    const viewParam = (params.get('view') || params.get('tab') || '').toLowerCase();
+
+    if (hash === '#dashboard' || viewParam === 'dashboard') {
+      switchSection('dashboard');
+    } else if (hash === '#wod' || viewParam === 'wod') {
+      switchSection('wod');
+    } else {
+      const savedTab = localStorage.getItem('kleos_active_tab');
+      if (savedTab === 'dashboard') {
+        switchSection('dashboard');
+      } else if (savedTab === 'wod') {
+        switchSection('wod');
+      }
+    }
+  }
+
+  window.addEventListener('hashchange', () => {
+    const hash = (window.location.hash || '').toLowerCase();
+    if (hash === '#dashboard') switchSection('dashboard');
+    else if (hash === '#wod') switchSection('wod');
+    else if (hash === '#wellness') switchSection('wellness');
+  });
+
+  initTabRouting();
 
   // =========================================================================
   // GESTIÓN DINÁMICA DE CATEGORÍAS, RPE Y LÓGICA DE 1RM / WOD
@@ -2038,6 +2077,7 @@ document.addEventListener('DOMContentLoaded', () => {
         kpis: { totalTonelaje: 0, totalReps: 0, totalWorkouts: 0, totalCardioKm: 0, avgWellness: 0, lastWellnessScore: 0, recentRMsCount: 0 },
         wellnessHistory: [],
         zonasCarga: { 'Descarga (<70%)': 0, 'Hipertrofia (70-80%)': 0, 'Fuerza Máxima (>80%)': 0 },
+        gymnastics: { totalVolume: 0, avgRpe: 0, topSkills: [] },
         rms: {},
         rmDeltas: {}
       });
@@ -2379,6 +2419,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderGymnasticsGrid(gymData, selectedCycle) {
+    const gymBlock = document.getElementById('dashboardGymBlock');
+    if (gymBlock) {
+      gymBlock.style.display = 'block';
+      gymBlock.classList.remove('hidden');
+    }
     if (!gymSkillsGrid) return;
     gymSkillsGrid.innerHTML = '';
 

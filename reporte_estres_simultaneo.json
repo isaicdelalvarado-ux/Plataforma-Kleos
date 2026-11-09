@@ -1,0 +1,115 @@
+{
+  "timestamp": "2026-09-08T21:31:38.759573",
+  "total_requests": 6,
+  "all_success": true,
+  "delta_registro_diario": 5,
+  "delta_wellness": 1,
+  "discrepancies": [],
+  "results": [
+    {
+      "index": 4,
+      "athlete": "Elisbeth Menco",
+      "type": "registro_diario",
+      "detail": "Gimnásticos - Pull Ups",
+      "start_time": 1788917483.2688453,
+      "end_time": 1788917485.9241805,
+      "duration_sec": 2.655,
+      "status_code": 200,
+      "response": "{\"status\":\"success\",\"message\":\"Entrenamiento guardado en pestaña 'Registro_Diario' para Elisbeth Menco\",\"timestamp\":\"2026-09-09T01:31:24.303Z\"}",
+      "error": null
+    },
+    {
+      "index": 1,
+      "athlete": "Asdrubal",
+      "type": "registro_diario",
+      "detail": "Metcon / WOD - Fran",
+      "start_time": 1788917483.2686586,
+      "end_time": 1788917486.5457065,
+      "duration_sec": 3.277,
+      "status_code": 200,
+      "response": "{\"status\":\"success\",\"message\":\"Entrenamiento guardado en pestaña 'Registro_Diario' para Asdrubal\",\"timestamp\":\"2026-09-09T01:31:25.039Z\"}",
+      "error": null
+    },
+    {
+      "index": 6,
+      "athlete": "Leonidas",
+      "type": "wellness",
+      "detail": "Wellness",
+      "start_time": 1788917483.267799,
+      "end_time": 1788917486.9486234,
+      "duration_sec": 3.681,
+      "status_code": 200,
+      "response": "{\"status\":\"success\",\"message\":\"Wellness guardado en pestaña 'Wellness' para Leonidas\",\"timestamp\":\"2026-09-09T01:31:25.670Z\"}",
+      "error": null
+    },
+    {
+      "index": 3,
+      "athlete": "Shantal Vivas",
+      "type": "registro_diario",
+      "detail": "Cardio - Carrera",
+      "start_time": 1788917483.2690463,
+      "end_time": 1788917489.2010427,
+      "duration_sec": 5.932,
+      "status_code": 200,
+      "response": "{\"status\":\"success\",\"message\":\"Entrenamiento guardado en pestaña 'Registro_Diario' para Shantal Vivas\",\"timestamp\":\"2026-09-09T01:31:27.213Z\"}",
+      "error": null
+    },
+    {
+      "index": 5,
+      "athlete": "Ariannys Valero",
+      "type": "registro_diario",
+      "detail": "Levantamiento Olímpico - Snatch (High Hang)",
+      "start_time": 1788917483.2692623,
+      "end_time": 1788917490.1248262,
+      "duration_sec": 6.856,
+      "status_code": 200,
+      "response": "{\"status\":\"success\",\"message\":\"Entrenamiento guardado en pestaña 'Registro_Diario' para Ariannys Valero\",\"timestamp\":\"2026-09-09T01:31:28.443Z\"}",
+      "error": null
+    },
+    {
+      "index": 2,
+      "athlete": "Andrea Flores",
+      "type": "registro_diario",
+      "detail": "Fuerza - Back Squat",
+      "start_time": 1788917483.2684371,
+      "end_time": 1788917491.1478372,
+      "duration_sec": 7.879,
+      "status_code": 200,
+      "response": "{\"status\":\"success\",\"message\":\"Entrenamiento guardado en pestaña 'Registro_Diario' para Andrea Flores\",\"timestamp\":\"2026-09-09T01:31:29.486Z\"}",
+      "error": null
+    }
+  ],
+  "post_audit": {
+    "status": "HEALTHY",
+    "timestamp": "2026-09-09T01:31:35.762Z",
+    "sheetsStatus": {
+      "Wellness": {
+        "maxRows": 1036,
+        "firstEmptyRowColA": 49,
+        "activeRecords": 47
+      },
+      "Registro_Diario": {
+        "maxRows": 979,
+        "firstEmptyRowColA": 201,
+        "activeRecords": 199
+      },
+      "Nombre de Atletas": {
+        "maxRows": 1000,
+        "firstEmptyRowColA": 9,
+        "activeRecords": 7
+      },
+      "RM_Atletas": {
+        "maxRows": 1001,
+        "firstEmptyRowColA": 77,
+        "activeRecords": 75
+      },
+      "Log_Script": {
+        "maxRows": 1000,
+        "firstEmptyRowColA": 49,
+        "activeRecords": 47
+      }
+    },
+    "discrepancies": [],
+    "summary": "Ecosistema 100% íntegro. Sin saltos de fila. Fórmulas y Looker Studio sincronizados."
+  }
+}

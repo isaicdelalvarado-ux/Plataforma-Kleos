@@ -1,0 +1,129 @@
+================================================================================
+          INFORME SEMANAL DE RENDIMIENTO DE LOS ATLETAS (SEMANA 38)
+                          PLATAFORMA KLEOS COACHING
+================================================================================
+Fecha de Emisión: 19 de Septiembre de 2026
+Autor: Antigravity AI Coaching Engine & Dirección Técnica KLEOS
+Destinatario: Dirección Técnica y Head Coach
+Estado General del Equipo: ÓPTIMO / RENDIMIENTO ELEVADO
+
+--------------------------------------------------------------------------------
+1. RESUMEN EJECUTIVO Y AUTORREGULACIÓN ADAPTATIVA
+--------------------------------------------------------------------------------
+Durante la Semana 38, el equipo mantuvo una adherencia del 100% en los registros diarios
+de entrenamiento y cuestionarios de bienestar (Wellness). El índice de fatiga general
+se encuentra dentro de la zona de alta adaptabilidad, permitiendo la consolidación
+de cargas intensas en levantamiento olímpico y un volumen cardiovascular homogéneo.
+
+Principales Hitos de la Semana:
+• Todos los atletas evaluados se ubican en rango ÓPTIMO (Wellness Score >= 24/30).
+• Homogeneización y cumplimiento estricto del volumen de Cardio a 3.700 km por atleta.
+• Integración y validación del puente de fuerza para variantes de Jerk y Complex Olímpicos.
+
+--------------------------------------------------------------------------------
+2. MONITOREO DE WELLNESS Y RECUPERACIÓN (19 DE SEPTIEMBRE DE 2026)
+--------------------------------------------------------------------------------
+Métricas individuales consolidadas a partir de la pestaña 'Wellness':
+
+• ANDREA FLORES
+  - Wellness Score Total: 27 / 30 (Nivel: EXCELENTE / ÓPTIMO)
+  - Calidad del Sueño: 4 / 5 (Reparador)
+  - Nivel de Energía / Fatiga: 9 / 10 (Alta vitalidad)
+  - Dolor Muscular: 4 / 5 (Recuperación muscular completa)
+  - Nivel de Estrés: 5 / 5 (Estrés mínimo / Calma)
+  - Estado de Ánimo: 5 / 5 (Máxima motivación)
+  - Horas de Sueño: 6.5 horas
+  - Zonas Anatómicas con Molestia: Ninguna reportada (Sin molestias)
+  - Diagnóstico: Disponibilidad total para prescripción en zona de Fuerza Máxima (>80% 1RM).
+
+• ELISBETH MENCO
+  - Wellness Score Total: 25 / 30 (Nivel: ÓPTIMO)
+  - Calidad del Sueño: 3 / 5 (Aceptable)
+  - Nivel de Energía / Fatiga: 9 / 10 (Energía alta sostenida)
+  - Dolor Muscular: 4 / 5 (Leve tensión funcional)
+  - Nivel de Estrés: 5 / 5 (Sin estrés psíquico)
+  - Estado de Ánimo: 4 / 5 (Positivo y enfocado)
+  - Horas de Sueño: 6.5 horas
+  - Zonas Anatómicas con Molestia: Cuádriceps e Isquiotibiales (Fatiga periférica normal)
+  - Diagnóstico: Monitoreo en calentamiento dinámico; sin restricciones de volumen.
+
+• SHANTAL VIVAS
+  - Wellness Score Total: 25 / 30 (Nivel: ÓPTIMO)
+  - Calidad del Sueño: 3 / 5 (Adecuado)
+  - Nivel de Energía / Fatiga: 9 / 10 (Alta capacidad de trabajo)
+  - Dolor Muscular: 4 / 5 (Óptimo tono neuromuscular)
+  - Nivel de Estrés: 5 / 5 (Equilibrio)
+  - Estado de Ánimo: 4 / 5 (Motivada)
+  - Horas de Sueño: 6.5 horas
+  - Zonas Anatómicas con Molestia: Ninguna reportada (Sin molestias)
+  - Diagnóstico: Capacidad plena para cargas axiales y velocidad de barra.
+
+• ASDRÚBAL
+  - Wellness Score Total: 24 / 30 (Nivel: ÓPTIMO)
+  - Calidad del Sueño: 3 / 5 (Regular)
+  - Nivel de Energía / Fatiga: 8 / 10 (Buen nivel operativo)
+  - Dolor Muscular: 4 / 5 (Buen estado muscular)
+  - Nivel de Estrés: 4 / 5 (Bajo estrés)
+  - Estado de Ánimo: 5 / 5 (Excelente disposición competitiva)
+  - Horas de Sueño: 6.5 horas
+  - Zonas Anatómicas con Molestia: Ninguna reportada (Sin molestias)
+  - Diagnóstico: Apto para sesiones de alta potencia e intervalos de carrera.
+
+--------------------------------------------------------------------------------
+3. CONTROL DE FUERZA MÁXIMA (1RM) Y VARIANTES DE JERK
+--------------------------------------------------------------------------------
+Tabla oficial de 1RM registrada en 'RM_Atletas' y puenteada en 'Registro_Diario':
+
+  +------------------+---------------+----------------+----------------+
+  | ATLETA           | JERK ESTÁNDAR | PUSH JERK (RM) | SPLIT JERK (RM)|
+  +------------------+---------------+----------------+----------------+
+  | Asdrúbal         | 70.0 kg       | 70.0 kg        | 70.0 kg        |
+  | Andrea Flores    | 60.0 kg       | 60.0 kg        | 60.0 kg        |
+  | Elisbeth Menco   | 60.0 kg       | 60.0 kg        | 60.0 kg        |
+  | Shantal Vivas    | 56.0 kg       | 56.0 kg        | 56.0 kg        |
+  +------------------+---------------+----------------+----------------+
+
+Análisis Técnico de Fuerza:
+• Asdrúbal lidera el bloque de empuje sobre la cabeza con 70 kg, manteniendo una
+  estabilidad sólida en la posición de recepción (Split Catch).
+• Andrea Flores y Elisbeth Menco comparten una sólida base de 60 kg, permitiendo
+  trabajos en bloques de hipertrofia y potencia entre 48 kg (80%) y 54 kg (90%).
+• Shantal Vivas consolida 56 kg de 1RM, con excelente velocidad de extensión de cadera.
+• El puente de equivalencia absoluta en el backend garantiza que el registro de
+  Push Jerk y Split Jerk herede de forma inmediata estos kilos, calculando el
+  % 1RM Real y el Tonelaje Total sin inconsistencias.
+
+--------------------------------------------------------------------------------
+4. VOLUMEN UNIFICADO DE CARDIO Y RESISTENCIA AERÓBICA
+--------------------------------------------------------------------------------
+Métricas de la sesión de carrera del 19 de septiembre de 2026:
+
+• Disciplina: Carrera Continua / Intervalada (Cardio Cero Máquinas)
+• Distancia Registrada: 3.700 km por atleta
+• Volumen Total Acumulado en la Sesión: 14.800 km (Equipo consolidado)
+• Detalle Individual:
+  - Asdrúbal:      1 serie × 3.700 km = 3.700 km totales | RPE: 8.0
+  - Elisbeth Menco: 1 serie × 3.700 km = 3.700 km totales | RPE: 8.0
+  - Andrea Flores:  1 serie × 3.700 km = 3.700 km totales | RPE: 8.0
+  - Shantal Vivas:  1 serie × 3.700 km = 3.700 km totales | RPE: 8.0
+
+Estandarización en Base de Datos:
+• Columna H (Distancia individual en km): 3.700 km (formato numérico de 3 decimales).
+• Columna L (Kilometraje total): 3.700 km.
+• Aislamiento de tonelaje: Columna I (Carga) = 0 kg, Columna M (Tonelaje) = 0 kg.
+• Sincronización Looker Studio: Acumulación lineal homogénea para gráficas de volumen semanal.
+
+--------------------------------------------------------------------------------
+5. RECOMENDACIONES TÉCNICAS PARA EL HEAD COACH
+--------------------------------------------------------------------------------
+1. Levantamiento Olímpico: Continuar la progresión en complejos de Snatch y Clean
+   utilizando los puentes de 1RM recientemente integrados (50 kg Snatch para Andrea,
+   80 kg Clean Squat para Asdrúbal).
+2. Prevención y Descarga: Mantener protocolo de movilidad de cadera y liberación
+   miofascial en cuádriceps e isquiotibiales para Elisbeth Menco previo a las sesiones de sentadilla.
+3. Cardio y Aeróbico: Programar el siguiente bloque de carrera con intervalos de 400m
+   manteniendo el cálculo estandarizado de Series × 0.400 km.
+
+================================================================================
+                    FIN DEL INFORME SEMANAL - PLATAFORMA KLEOS
+================================================================================
