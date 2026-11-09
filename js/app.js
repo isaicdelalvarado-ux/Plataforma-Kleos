@@ -301,6 +301,32 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!vGroup || !vSelect) return;
 
     const currentCat = wodCategory ? wodCategory.value : 'Fuerza';
+    const vLabel = vGroup.querySelector('label') || document.getElementById('lblVariant');
+
+    if (currentCat === 'Gimnásticos') {
+      if (vLabel) vLabel.textContent = 'Columna D: Nivel de Progresión / Estilo del Skill';
+      if (vBadge) {
+        vBadge.textContent = 'Progresiones de Gimnasia';
+        vBadge.className = 'badge';
+      }
+      vSelect.innerHTML = `
+        <option value="Rx / Estándar" selected>⚡ Rx / Estándar (Sin asistencia)</option>
+        <option value="Estricto (Strict)">💪 Estricto (Strict / Fuerza)</option>
+        <option value="Kipping">🔄 Kipping (Balanceo dinámico)</option>
+        <option value="Butterfly">🦋 Butterfly (Mariposa / Velocidad)</option>
+        <option value="Con Banda / Elástico">🎗️ Con Banda / Elástico</option>
+        <option value="Negativas / Excéntricas">⏱️ Negativas / Excéntricas</option>
+        <option value="Con Déficit / Lastre">⚖️ Con Déficit / Lastre</option>
+        <option value="Pies en Cajón / Suelo">📦 Pies en Cajón / Suelo</option>
+        <option value="En Barra Alta">📏 En Barra Alta</option>
+        <option value="En Anillas (Rings)">⭕ En Anillas (Rings)</option>
+      `;
+      vGroup.style.display = 'block';
+      return;
+    }
+
+    if (vLabel) vLabel.textContent = 'Variante Técnica (High Hang, Low Hang, Desde Tacos...)';
+
     if (currentCat !== 'Fuerza' && currentCat !== 'Levantamiento Olímpico') {
       vGroup.style.display = 'none';
       return;
@@ -939,12 +965,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     } else if (category === 'Gimnásticos') {
       // 2. GIMNÁSTICOS (Skill / Peso Corporal)
-      if (lblExercise) lblExercise.textContent = 'Columna E: Ejercicio';
+      if (lblExercise) lblExercise.textContent = 'Columna E: Skill / Movimiento';
       if (groupSeries) groupSeries.style.display = 'block';
-      if (lblSeries) lblSeries.textContent = 'Columna G: Series';
+      if (lblSeries) lblSeries.textContent = 'Columna G: Series (Sets)';
       if (groupReps) groupReps.style.display = 'block';
       const isDistanceSkill = exercise.toLowerCase().indexOf('walk') !== -1 || exercise.toLowerCase().indexOf('metros') !== -1;
-      if (lblRepsOrDistance) lblRepsOrDistance.textContent = isDistanceSkill ? 'Columna H: Metros' : 'Columna H: Repeticiones';
+      if (lblRepsOrDistance) lblRepsOrDistance.textContent = isDistanceSkill ? 'Columna H: Metros' : 'Columna H: Max Reps Unbroken (o Reps/Serie)';
       if (wodReps) wodReps.placeholder = isDistanceSkill ? 'Ej: 10 (metros)' : 'Ej: 12 reps';
 
       if (groupWeight) groupWeight.style.display = 'none';
@@ -959,11 +985,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (groupPesoWod) groupPesoWod.style.display = 'none';
       if (customWodGroup) customWodGroup.style.display = 'none';
 
-      if (lblRpe) lblRpe.textContent = 'Columna S: RPE de la Sesión (Borg CR-10)';
+      if (lblRpe) lblRpe.textContent = 'Columna S / G: RPE / Calidad Técnica (Borg CR-10)';
       if (rmStatusBadge) {
-        rmStatusBadge.textContent = '🤸 Gimnásticos (Carga = 0 kg | 1RM = 0)';
+        rmStatusBadge.textContent = '🤸 Skill Gimnástico (Auto-archivado en Skills_Gimnasia y Registro_Diario)';
         rmStatusBadge.className = 'badge';
       }
+      updateVariantOptions();
 
     } else if (category === 'Metcon / WOD') {
       // 3. METCON / WOD
@@ -1645,6 +1672,11 @@ document.addEventListener('DOMContentLoaded', () => {
         categoria: category,
         ejercicio: finalExercise,
         variante: variantVal,
+        skillMovimiento: finalExercise,
+        nivelProgresion: (category === 'Gimnásticos') ? (variantVal || 'Rx / Estándar') : '',
+        maxRepsUnbroken: (category === 'Gimnásticos') ? (parseFloat(repsVal) || 0) : 0,
+        volumenTotal: (category === 'Gimnásticos') ? (seriesVal * (parseFloat(repsVal) || 0)) : 0,
+        rpeCalidad: document.getElementById('wodRpe').value,
         tipoWod: tipoWodVal,
         series: (category === 'Metcon / WOD') ? 0 : seriesVal,
         reps: (category === 'Metcon / WOD') ? 0 : repsVal,
@@ -1662,6 +1694,7 @@ document.addEventListener('DOMContentLoaded', () => {
         es_nuevo_rm: !!(document.getElementById('wodEsNuevoRm') && document.getElementById('wodEsNuevoRm').checked),
         es_cierre_ciclo: !!(document.getElementById('wodCierreCiclo') && document.getElementById('wodCierreCiclo').checked),
         ciclo: localStorage.getItem('kleos_active_cycle') || 'Atenea',
+        semana: 1,
         // Retrocompatibilidad
         date: wodDateInput.value,
         category: category,
@@ -2040,13 +2073,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Indicador visual de Fase & Barra Segmentada de 12 bloques
     if (phaseTitleText) {
       if (selectedCycle === 'Zeus') {
-        phaseTitleText.innerHTML = `Fase: <span>Macrociclo Concluido (100% 1RM)</span> &bull; 12/12 Semanas`;
+        phaseTitleText.textContent = 'Semana 12/12 · Ciclo Finalizado (100% 1RM)';
       } else {
-        let phaseName = 'Acumulación (70-75% 1RM)';
-        if (weekNum >= 5 && weekNum <= 8) phaseName = 'Intensificación (80-85% 1RM)';
-        else if (weekNum >= 9 && weekNum <= 11) phaseName = 'Realización / Pico (>85-90% 1RM)';
-        else if (weekNum >= 12) phaseName = 'Testeo Máximo & Cierre (100%+ 1RM)';
-        phaseTitleText.innerHTML = `Fase: <span>${phaseName}</span> &bull; Sem ${weekNum}/12`;
+        let phaseName = 'Acumulación (70-75%)';
+        if (weekNum >= 5 && weekNum <= 8) phaseName = 'Intensificación (80-85%)';
+        else if (weekNum >= 9 && weekNum <= 11) phaseName = 'Realización / Pico (>85-90%)';
+        else if (weekNum >= 12) phaseName = 'Testeo Máximo & Cierre (100%+)';
+        phaseTitleText.textContent = `Semana ${weekNum}/12 · ${phaseName}`;
       }
     }
 
@@ -2347,9 +2380,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const currentCycle = selectedCycle || currentDashboardCycle || 'Atenea';
     const isAtenea = (currentCycle === 'Atenea');
+    const rmsBlockSubheading = document.getElementById('rmsBlockSubheading');
 
     if (rmsCycleNameBadge) {
-      rmsCycleNameBadge.textContent = isAtenea ? '⚡ Atenea vs Zeus' : '🏛️ Zeus (Histórico)';
+      rmsCycleNameBadge.textContent = isAtenea ? '⚡ Atenea (Base: Cierre Zeus)' : '🏛️ Zeus (vs Basal Pre-Zeus)';
+    }
+
+    if (rmsBlockSubheading) {
+      if (isAtenea) {
+        rmsBlockSubheading.textContent = 'Base de trabajo (100% referencia) para calcular zonas de carga (70-75% Acumulación). Refleja nuevos PRs en cuanto se superen marcas.';
+      } else {
+        rmsBlockSubheading.textContent = 'Marcas oficiales de cierre de Zeus comparadas contra el estado basal previo (RM_Atletas).';
+      }
     }
 
     const keys = Object.keys(rms || {});
@@ -2362,8 +2404,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Levantamientos prioritarios al frente
-    const priorityLifts = ['Back Squat', 'Front Squat', 'Clean & Jerk', 'Snatch', 'Clean Squat', 'Jerk', 'Deadlift', 'Bench Press'];
+    // Los 4 levantamientos principales siempre al frente
+    const priorityLifts = ['Back Squat', 'Clean & Jerk', 'Snatch', 'Deadlift', 'Front Squat', 'Clean Squat', 'Jerk', 'Bench Press'];
     keys.sort((a, b) => {
       const idxA = priorityLifts.indexOf(a);
       const idxB = priorityLifts.indexOf(b);
@@ -2376,32 +2418,43 @@ document.addEventListener('DOMContentLoaded', () => {
     keys.forEach(ej => {
       const peso = parseFloat(rms[ej]) || 0;
       let deltaBadgeHtml = '';
+      let subtextDesc = isAtenea ? 'Base 100% Atenea' : 'Oficial Zeus';
 
-      if (isAtenea && rmDeltas && rmDeltas[ej]) {
-        const delta = rmDeltas[ej];
-        if (delta && delta.zeus > 0) {
-          const diff = delta.diff;
-          if (diff > 0) {
-            deltaBadgeHtml = `<span class="rm-delta-badge delta-positive" title="Mejora vs Zeus: +${delta.diff} kg (+${delta.pctDiff}%)">+${delta.diff.toFixed(1)} kg vs Zeus</span>`;
-          } else if (diff === 0) {
-            deltaBadgeHtml = `<span class="rm-delta-badge delta-equal" title="Misma marca basal del Ciclo Zeus">= 0.0 kg vs Zeus</span>`;
-          } else {
-            deltaBadgeHtml = `<span class="rm-delta-badge delta-negative" title="Diferencia vs Zeus: ${delta.diff} kg">${delta.diff.toFixed(1)} kg vs Zeus</span>`;
-          }
-        } else if (delta && delta.current > 0) {
-          deltaBadgeHtml = `<span class="rm-delta-badge delta-positive" title="Nuevo levantamiento testeado en Ciclo Atenea">Nuevo</span>`;
+      if (isAtenea) {
+        const delta = rmDeltas ? rmDeltas[ej] : null;
+        if (delta && delta.diff > 0.05) {
+          deltaBadgeHtml = `<span class="rm-delta-badge delta-positive" title="Nuevo récord personal superado en Ciclo Atenea: +${delta.diff} kg vs Zeus">🔥 Nuevo PR Atenea (+${delta.diff.toFixed(1)} kg)</span>`;
+          subtextDesc = 'Superó marca Zeus';
+        } else {
+          // El peso aún es idéntico a Zeus (Base actual)
+          deltaBadgeHtml = `<span class="rm-delta-badge delta-base" title="Base vigente de trabajo heredada del Cierre de Zeus">Base Zeus</span>`;
+          subtextDesc = 'Base actual: Cierre Zeus';
         }
-      } else if (!isAtenea) {
-        deltaBadgeHtml = `<span class="rm-delta-badge delta-equal" title="Marca basal histórica del Ciclo Zeus">Base Zeus</span>`;
+      } else {
+        // Ciclo Zeus vs Marcas Basales
+        const delta = rmDeltas ? rmDeltas[ej] : null;
+        if (delta && delta.diff > 0.05) {
+          deltaBadgeHtml = `<span class="rm-delta-badge delta-positive" title="Progreso en Zeus vs Marca Basal Pre-Zeus: +${delta.diff} kg (+${delta.pctDiff}%)">+${delta.diff.toFixed(1)} kg vs Basal</span>`;
+          subtextDesc = 'Ganancia en Zeus';
+        } else if (delta && delta.base > 0) {
+          deltaBadgeHtml = `<span class="rm-delta-badge delta-equal" title="Sin variación respecto a la marca basal">= Basal</span>`;
+          subtextDesc = 'Marca Basal';
+        } else {
+          deltaBadgeHtml = `<span class="rm-delta-badge delta-base" title="Récord oficial de cierre de Zeus">Cierre Zeus</span>`;
+          subtextDesc = 'Marca Oficial';
+        }
       }
 
       const tile = document.createElement('div');
       tile.className = 'rm-tile';
       tile.innerHTML = `
-        <span class="rm-tile-name" title="${ej}">${ej}</span>
+        <div class="rm-tile-header">
+          <span class="rm-tile-name" title="${ej}">${ej}</span>
+          ${deltaBadgeHtml}
+        </div>
         <div class="rm-tile-weight-row">
           <span class="rm-tile-weight">${peso.toLocaleString('es-ES', { maximumFractionDigits: 1 })}<span>kg</span></span>
-          ${deltaBadgeHtml}
+          <span class="rm-tile-subtext">${subtextDesc}</span>
         </div>
       `;
       dashboardRmsGrid.appendChild(tile);

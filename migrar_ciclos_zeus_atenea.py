@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Migración Oficial de Macrociclos en Google Sheets:
-- Actualiza 'Control_Ciclo': Ciclo_Activo = 'Atenea', Semana_Actual = 1.
-- Renombra 'RM_Ciclo_02' a 'RM_Atenea' (preservando todas sus 33 filas consolidadas).
-- Genera 'RM_Zeus' con los 86 registros basales de Ciclo 1 (copia fiel de RM_Atletas).
-- Normaliza columnas de ciclo en 'Registro_Diario', 'Wellness' e 'Historial_RMs' a 'Zeus' y 'Atenea'.
+Migración Oficial de Macrociclos en Google Sheets (Corrección Metodológica 1RM):
+1. 'RM_Atletas' (86 filas) se preserva intacta como Marcas Basales Pre-Zeus.
+   Se crea respaldo fiel 'RM_Basal'.
+2. Las 33 marcas del cierre de Zeus (antiguo 'RM_Ciclo_02' / actual 'RM_Atenea') 
+   se asignan oficialmente a 'RM_Zeus'.
+3. 'RM_Atenea' se clona de 'RM_Zeus' como Base de Trabajo (100% de referencia) para la Semana 1.
+4. En 'Historial_RMs', las filas históricas de cierre de ciclo se normalizan a 'Zeus'.
+5. En 'Control_Ciclo': Ciclo_Activo = 'Atenea' y Semana_Actual = 1.
+6. En 'Registro_Diario' y 'Wellness', los registros pasados se asignan al ciclo 'Zeus'.
 """
 
 import sys
@@ -20,115 +24,155 @@ if sys.platform == "win32":
         pass
 
 def main():
-    print("=" * 70)
-    print("INICIANDO MIGRACIÓN OFICIAL: MACROCICLOS ZEUS Y ATENEA (GOOGLE SHEETS)")
-    print("=" * 70)
+    print("=" * 75)
+    print("INICIANDO MIGRACIÓN OFICIAL: MACROCICLOS ZEUS Y ATENEA (CORRECCIÓN 1RM)")
+    print("=" * 75)
 
     creds = Credentials.from_service_account_file("credentials.json", scopes=["https://www.googleapis.com/auth/spreadsheets"])
     gc = gspread.authorize(creds)
     sh = gc.open_by_key("1gUMRdWqGwnhJ4cEkt-lOKyYMiGNq2UawthVSdNf1b7o")
+    existing_sheets = {ws.title: ws for ws in sh.worksheets()}
 
     # 1. ACTUALIZAR 'Control_Ciclo'
-    print("\n[1/4] Actualizando pestaña 'Control_Ciclo'...")
+    print("\n[1/5] Actualizando pestaña 'Control_Ciclo'...")
     try:
-        ws_ctrl = sh.worksheet("Control_Ciclo")
-        ws_ctrl.update_acell("B2", "Atenea")
-        ws_ctrl.update_acell("B3", "1")
-        ws_ctrl.update_acell("C2", "Configurado oficialmente: Ciclo Atenea")
-        ws_ctrl.update_acell("C3", "Semana 1 - Fase de Acumulación (70-75% 1RM)")
-        print("  ✅ 'Control_Ciclo': Ciclo_Activo = 'Atenea' | Semana_Actual = 1.")
+        if "Control_Ciclo" in existing_sheets:
+            ws_ctrl = existing_sheets["Control_Ciclo"]
+            ws_ctrl.update_acell("B2", "Atenea")
+            ws_ctrl.update_acell("B3", "1")
+            ws_ctrl.update_acell("C2", "Configurado oficialmente: Ciclo Atenea")
+            ws_ctrl.update_acell("C3", "Semana 1 - Fase de Acumulación (70-75% 1RM)")
+            print("  ✅ 'Control_Ciclo': Ciclo_Activo = 'Atenea' | Semana_Actual = 1.")
+        else:
+            print("  ⚠️ No se encontró la pestaña 'Control_Ciclo'.")
     except Exception as e:
         print(f"  ❌ Error en 'Control_Ciclo': {e}")
 
-    # 2. RENOMBRAR 'RM_Ciclo_02' -> 'RM_Atenea' Y CREAR 'RM_Zeus'
-    print("\n[2/4] Gestionando pestañas de 1RM ('RM_Atenea' y 'RM_Zeus')...")
-    existing_sheets = [ws.title for ws in sh.worksheets()]
+    # 2. GESTIONAR PESTAÑAS DE 1RM
+    print("\n[2/5] Gestionando pestañas de 1RM con corrección metodológica...")
     
-    # Renombrar RM_Ciclo_02 a RM_Atenea
-    if "RM_Ciclo_02" in existing_sheets and "RM_Atenea" not in existing_sheets:
-        ws_c2 = sh.worksheet("RM_Ciclo_02")
-        ws_c2.update_title("RM_Atenea")
-        print("  ✅ Pestaña 'RM_Ciclo_02' renombrada a 'RM_Atenea' con éxito.")
+    # A) Respaldar RM_Atletas en RM_Basal
+    ws_atletas = existing_sheets.get("RM_Atletas")
+    if ws_atletas:
+        atletas_vals = ws_atletas.get_all_values()
+        print(f"  ℹ️ 'RM_Atletas' conservada intacta con {len(atletas_vals)} marcas basales.")
+        if "RM_Basal" not in existing_sheets:
+            ws_basal = sh.add_worksheet(title="RM_Basal", rows=len(atletas_vals) + 10, cols=5)
+            ws_basal.update(range_name="A1", values=atletas_vals)
+            print(f"  ✅ Copia de respaldo 'RM_Basal' creada ({len(atletas_vals)} filas).")
+        else:
+            print("  ℹ️ 'RM_Basal' ya existe.")
+    else:
+        print("  ⚠️ Advertencia: No se encontró 'RM_Atletas'.")
+
+    # B) Obtener las 33 filas oficiales logradas en el cierre de Zeus
+    # Pueden estar en 'RM_Ciclo_02' o transitoriamente en 'RM_Atenea' (33 filas)
+    zeus_closing_vals = None
+    if "RM_Ciclo_02" in existing_sheets:
+        zeus_closing_vals = existing_sheets["RM_Ciclo_02"].get_all_values()
+        print(f"  ℹ️ Encontradas {len(zeus_closing_vals)} filas de cierre Zeus en 'RM_Ciclo_02'.")
     elif "RM_Atenea" in existing_sheets:
-        print("  ℹ️ Pestaña 'RM_Atenea' ya existe.")
-    else:
-        print("  ⚠️ No se encontró 'RM_Ciclo_02' ni 'RM_Atenea'.")
+        candidate_vals = existing_sheets["RM_Atenea"].get_all_values()
+        if len(candidate_vals) == 33 or (len(candidate_vals) > 0 and len(candidate_vals) != len(atletas_vals)):
+            zeus_closing_vals = candidate_vals
+            print(f"  ℹ️ Tomando las {len(zeus_closing_vals)} filas de cierre Zeus desde 'RM_Atenea'.")
 
-    # Crear o actualizar RM_Zeus a partir de RM_Atletas
-    if "RM_Zeus" not in existing_sheets:
-        ws_base = sh.worksheet("RM_Atletas")
-        base_vals = ws_base.get_all_values()
-        ws_zeus = sh.add_worksheet(title="RM_Zeus", rows=len(base_vals) + 10, cols=5)
-        ws_zeus.update(range_name="A1", values=base_vals)
-        print(f"  ✅ Pestaña 'RM_Zeus' creada con éxito ({len(base_vals)} filas basales de Ciclo 1).")
-    else:
-        print("  ℹ️ Pestaña 'RM_Zeus' ya existe.")
+    if not zeus_closing_vals:
+        # Si por alguna razón RM_Zeus ya tiene filas distintas a RM_Atletas
+        if "RM_Zeus" in existing_sheets:
+            zeus_closing_vals = existing_sheets["RM_Zeus"].get_all_values()
+            print(f"  ℹ️ Usando valores existentes en 'RM_Zeus' ({len(zeus_closing_vals)} filas).")
 
-    # 3. NORMALIZAR 'Historial_RMs'
-    print("\n[3/4] Normalizando etiquetas de ciclo en 'Historial_RMs'...")
+    if not zeus_closing_vals:
+        print("  ❌ Error crítico: No se encontraron los datos de cierre de Zeus.")
+        return
+
+    # C) Actualizar 'RM_Zeus' con las marcas oficiales de cierre de Zeus
+    if "RM_Zeus" in existing_sheets:
+        ws_zeus = existing_sheets["RM_Zeus"]
+        ws_zeus.clear()
+        ws_zeus.update(range_name="A1", values=zeus_closing_vals)
+        print(f"  ✅ 'RM_Zeus' actualizada con las {len(zeus_closing_vals)} marcas oficiales del cierre de Zeus.")
+    else:
+        ws_zeus = sh.add_worksheet(title="RM_Zeus", rows=len(zeus_closing_vals) + 10, cols=5)
+        ws_zeus.update(range_name="A1", values=zeus_closing_vals)
+        print(f"  ✅ 'RM_Zeus' creada con las {len(zeus_closing_vals)} marcas oficiales del cierre de Zeus.")
+
+    # D) Crear / Actualizar 'RM_Atenea' clonando inicialmente 'RM_Zeus'
+    # Así arranca con la base vigente (100% de referencia) para la Semana 1
+    if "RM_Atenea" in existing_sheets:
+        ws_atenea = existing_sheets["RM_Atenea"]
+        ws_atenea.clear()
+        ws_atenea.update(range_name="A1", values=zeus_closing_vals)
+        print(f"  ✅ 'RM_Atenea' configurada como clon inicial de 'RM_Zeus' ({len(zeus_closing_vals)} filas).")
+    else:
+        ws_atenea = sh.add_worksheet(title="RM_Atenea", rows=len(zeus_closing_vals) + 10, cols=5)
+        ws_atenea.update(range_name="A1", values=zeus_closing_vals)
+        print(f"  ✅ 'RM_Atenea' creada clonando 'RM_Zeus' ({len(zeus_closing_vals)} filas).")
+
+    # Si aún quedaba RM_Ciclo_02, podemos eliminarla o dejarla de respaldo
+    if "RM_Ciclo_02" in existing_sheets and "RM_Zeus" in [ws.title for ws in sh.worksheets()]:
+        try:
+            sh.del_worksheet(existing_sheets["RM_Ciclo_02"])
+            print("  ✅ Pestaña obsoleta 'RM_Ciclo_02' eliminada (consolidada en 'RM_Zeus').")
+        except Exception:
+            pass
+
+    # 3. NORMALIZAR 'Historial_RMs' -> Todas las filas históricas de cierre van a 'Zeus'
+    print("\n[3/5] Normalizando etiquetas de ciclo en 'Historial_RMs'...")
     try:
         ws_hist = sh.worksheet("Historial_RMs")
         hist_vals = ws_hist.get_all_values()
         if len(hist_vals) > 1:
             updated_count = 0
-            # Columna E es índice 4
             for r_idx in range(1, len(hist_vals)):
-                row = hist_vals[r_idx]
-                curr_cycle = row[4].strip() if len(row) > 4 else ""
-                if curr_cycle in ["Ciclo_02", "2", "02"]:
-                    hist_vals[r_idx][4] = "Atenea"
-                    updated_count += 1
-                elif curr_cycle in ["Ciclo_01", "1", "01", ""]:
+                # Columna E es índice 4 (Ciclo)
+                curr_cycle = hist_vals[r_idx][4].strip() if len(hist_vals[r_idx]) > 4 else ""
+                # Todas las marcas logradas en el cierre de ciclo 2 / pre-Atenea pertenecen a Zeus
+                if curr_cycle in ["Ciclo_02", "Ciclo_01", "2", "1", "02", "01", "Atenea", ""]:
                     hist_vals[r_idx][4] = "Zeus"
                     updated_count += 1
             ws_hist.update(range_name=f"A1:E{len(hist_vals)}", values=hist_vals)
-            print(f"  ✅ 'Historial_RMs': {updated_count} filas normalizadas a 'Atenea' o 'Zeus'.")
+            print(f"  ✅ 'Historial_RMs': {updated_count} filas normalizadas a ciclo 'Zeus'.")
     except Exception as e:
         print(f"  ❌ Error en 'Historial_RMs': {e}")
 
-    # 4. NORMALIZAR 'Registro_Diario' Y 'Wellness'
-    print("\n[4/4] Normalizando 'Registro_Diario' y 'Wellness'...")
+    # 4. NORMALIZAR 'Registro_Diario' -> macociclo 'Zeus'
+    print("\n[4/5] Normalizando macrociclos en 'Registro_Diario'...")
     try:
         ws_reg = sh.worksheet("Registro_Diario")
         reg_vals = ws_reg.get_all_values()
         if len(reg_vals) > 1:
             reg_updated = 0
-            # Columna Z es índice 25
             for r_idx in range(1, len(reg_vals)):
                 row = reg_vals[r_idx]
                 while len(row) < 26:
                     row.append("")
                 curr_c = row[25].strip()
-                if curr_c in ["Ciclo_01", "1", "01", ""]:
+                if curr_c in ["Ciclo_01", "1", "01", "", "Ciclo_02", "2", "02"]:
                     row[25] = "Zeus"
                     reg_updated += 1
-                elif curr_c in ["Ciclo_02", "2", "02"]:
-                    row[25] = "Atenea"
-                    reg_updated += 1
                 reg_vals[r_idx] = row
-            # Actualizar solo la columna Z
             col_z_vals = [[r[25]] for r in reg_vals[1:]]
             ws_reg.update(range_name=f"Z2:Z{len(reg_vals)}", values=col_z_vals)
             print(f"  ✅ 'Registro_Diario': {reg_updated} filas asignadas a macrociclo 'Zeus'.")
     except Exception as e:
         print(f"  ❌ Error en 'Registro_Diario': {e}")
 
+    # 5. NORMALIZAR 'Wellness' -> macrociclo 'Zeus'
+    print("\n[5/5] Normalizando macrociclos en 'Wellness'...")
     try:
         ws_well = sh.worksheet("Wellness")
         well_vals = ws_well.get_all_values()
         if len(well_vals) > 1:
             well_updated = 0
-            # Columna M es índice 12
             for r_idx in range(1, len(well_vals)):
                 row = well_vals[r_idx]
                 while len(row) < 13:
                     row.append("")
                 curr_c = row[12].strip()
-                if curr_c in ["Ciclo_01", "1", "01", ""]:
+                if curr_c in ["Ciclo_01", "1", "01", "", "Ciclo_02", "2", "02"]:
                     row[12] = "Zeus"
-                    well_updated += 1
-                elif curr_c in ["Ciclo_02", "2", "02"]:
-                    row[12] = "Atenea"
                     well_updated += 1
                 well_vals[r_idx] = row
             col_m_vals = [[r[12]] for r in well_vals[1:]]
@@ -137,9 +181,9 @@ def main():
     except Exception as e:
         print(f"  ❌ Error en 'Wellness': {e}")
 
-    print("\n" + "=" * 70)
-    print("¡MIGRACIÓN DE GOOGLE SHEETS COMPLETADA CON ÉXITO!")
-    print("=" * 70)
+    print("\n" + "=" * 75)
+    print("¡MIGRACIÓN Y CORRECCIÓN METODOLÓGICA COMPLETADA CON ÉXITO TOTAL!")
+    print("=" * 75)
 
 if __name__ == "__main__":
     main()

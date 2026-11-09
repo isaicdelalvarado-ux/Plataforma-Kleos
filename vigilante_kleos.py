@@ -339,20 +339,40 @@ def audit_and_heal_google_sheets():
         issues.append(f"Error procesando Wellness: {e}")
 
     # =========================================================================
-    # 3. AUDITORÍA DE 'RM_Atletas'
+    # 3. AUDITORÍA DE RMs (RM_Atletas, RM_Zeus, RM_Atenea) Y CONTROL DE CICLO
     # =========================================================================
+    rm_counts = {}
+    for rm_tab in ["RM_Atletas", "RM_Zeus", "RM_Atenea"]:
+        try:
+            ws_tab = sh.worksheet(rm_tab)
+            rm_counts[rm_tab] = max(0, len(ws_tab.get_all_values()) - 1)
+        except Exception:
+            issues.append(f"PESTAÑA FALTANTE: No se encontró '{rm_tab}'.")
+            rm_counts[rm_tab] = 0
+
     try:
-        ws_rm = sh.worksheet("RM_Atletas")
-        rm_all = ws_rm.get_all_values()
-        rm_count = len(rm_all) - 1
+        ws_ctrl = sh.worksheet("Control_Ciclo")
+        ctrl_vals = ws_ctrl.get_all_values()
+        if len(ctrl_vals) < 3:
+            issues.append("CONTROL_CICLO INCOMPLETO: Se esperan al menos filas de Ciclo_Activo y Semana_Actual.")
     except Exception:
-        rm_count = 0
+        issues.append("PESTAÑA FALTANTE: No se encontró 'Control_Ciclo'.")
+
+    # 4. AUDITORÍA DE 'Skills_Gimnasia'
+    try:
+        ws_gim = sh.worksheet("Skills_Gimnasia")
+        gim_rows = max(0, len(ws_gim.get_all_values()) - 1)
+    except Exception:
+        issues.append("PESTAÑA FALTANTE: No se encontró 'Skills_Gimnasia'.")
+        gim_rows = 0
 
     return {
         "ok": len(issues) == 0,
         "total_registros_diario": total_filas if 'total_filas' in locals() else 0,
         "total_wellness": well_rows if 'well_rows' in locals() else 0,
-        "total_rm_records": rm_count,
+        "total_skills_gimnasia": gim_rows,
+        "total_rm_records": rm_counts.get("RM_Atletas", 0),
+        "rm_counts": rm_counts,
         "repaired_formulas_rows": repaired_rows,
         "repaired_isolations_rows": healed_isolations,
         "issues": issues

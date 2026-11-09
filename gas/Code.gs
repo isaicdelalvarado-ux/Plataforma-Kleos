@@ -46,12 +46,14 @@ var TABS = {
   WELLNESS: "Wellness",
   REGISTRO_DIARIO: "Registro_Diario",
   NOMBRE_ATLETAS: "Nombre de Atletas",
-  RM_ATLETAS: "RM_Atletas",         // Pestaña Base Intacta
-  RM_ZEUS: "RM_Zeus",               // Macrociclo 1 (Zeus - Histórico)
-  RM_ATENEA: "RM_Atenea",           // Macrociclo 2 (Atenea - Activo)
+  RM_ATLETAS: "RM_Atletas",         // Marcas Basales Pre-Zeus Intactas
+  RM_BASAL: "RM_Basal",             // Respaldo de Marcas Basales
+  RM_ZEUS: "RM_Zeus",               // RMs Oficiales Cierre Macrociclo Zeus
+  RM_ATENEA: "RM_Atenea",           // RMs Macrociclo Atenea (Base inicial = Zeus)
   RM_CICLO_2: "RM_Atenea",          // Alias de compatibilidad
   HISTORIAL_RMS: "Historial_RMs",
   CONTROL_CICLO: "Control_Ciclo",
+  SKILLS_GIMNASIA: "Skills_Gimnasia", // Pestaña de Skills y Progresiones de Gimnasia
   LOG_SCRIPT: "Log_Script"
 };
 
@@ -815,8 +817,11 @@ function getAthleteDashboardData(ss, athleteParam, cycleParam) {
   var availableCycles = getAvailableCycles(ss);
 
   var athletes = getAthletesList(ss);
+  var isZeusSelected = (selectedCycle.toLowerCase() === "zeus" || selectedCycle.toLowerCase() === "ciclo_01" || selectedCycle.toLowerCase() === "1");
   var rmData = getRmData(ss, selectedCycle);
-  var rmDataZeus = getRmData(ss, "Zeus"); // Referencia basal para calcular deltas
+  // Si se consulta Zeus, la base comparativa son las marcas Basales (RM_Atletas)
+  // Si se consulta Atenea, la base comparativa son las marcas de Cierre de Zeus (RM_Zeus)
+  var rmDataBase = isZeusSelected ? getRmData(ss, "Basal") : getRmData(ss, "Zeus");
 
   // 1. Extraer datos de 'Registro_Diario' filtrados por el ciclo seleccionado
   var totalTonelaje = 0;
@@ -997,18 +1002,18 @@ function getAthleteDashboardData(ss, athleteParam, cycleParam) {
   var avgWellness = wellnessScores.length > 0 ? (wellnessScores.reduce(function(a, b) { return a + b; }, 0) / wellnessScores.length) : 0;
   var lastWellnessScore = wellnessScores.length > 0 ? wellnessScores[wellnessScores.length - 1] : 0;
 
-  // 3. Extraer marcas de 1RM del ciclo seleccionado
+  // 3. Extraer marcas de 1RM del ciclo seleccionado y su base de comparación
   var athleteRms = {};
-  var athleteZeusRms = {};
+  var athleteBaseRms = {};
 
   if (!isGlobal && rmData[athleteParam]) {
     athleteRms = JSON.parse(JSON.stringify(rmData[athleteParam]));
-    athleteZeusRms = (rmDataZeus && rmDataZeus[athleteParam]) ? JSON.parse(JSON.stringify(rmDataZeus[athleteParam])) : {};
+    athleteBaseRms = (rmDataBase && rmDataBase[athleteParam]) ? JSON.parse(JSON.stringify(rmDataBase[athleteParam])) : {};
   } else if (!isGlobal) {
     for (var aKey in rmData) {
       if (aKey.toLowerCase() === targetNorm) {
         athleteRms = JSON.parse(JSON.stringify(rmData[aKey]));
-        athleteZeusRms = (rmDataZeus && rmDataZeus[aKey]) ? JSON.parse(JSON.stringify(rmDataZeus[aKey])) : {};
+        athleteBaseRms = (rmDataBase && rmDataBase[aKey]) ? JSON.parse(JSON.stringify(rmDataBase[aKey])) : {};
         break;
       }
     }
@@ -1022,32 +1027,15 @@ function getAthleteDashboardData(ss, athleteParam, cycleParam) {
         }
       }
     }
-    // Consolidado global Zeus para deltas
-    for (var athName in rmDataZeus) {
-      for (var ejKey in rmDataZeus[athName]) {
-        var rmZVal = parseFloat(rmDataZeus[athName][ejKey]) || 0;
-        if (rmZVal > 0) {
-          athleteZeusRms[ejKey] = Math.max(rmZVal, athleteZeusRms[ejKey] || 0);
+    // Consolidado global Base para calcular deltas comparativos
+    for (var athName in rmDataBase) {
+      for (var ejKey in rmDataBase[athName]) {
+        var rmBVal = parseFloat(rmDataBase[athName][ejKey]) || 0;
+        if (rmBVal > 0) {
+          athleteBaseRms[ejKey] = Math.max(rmBVal, athleteBaseRms[ejKey] || 0);
         }
       }
     }
-  }
-
-  // Calcular Deltas vs Zeus para cada ejercicio
-  var rmDeltas = {};
-  for (var ej in athleteRms) {
-    var valCurrent = parseFloat(athleteRms[ej]) || 0;
-    var valZeus = parseFloat(athleteZeusRms[ej]) || 0;
-    var diff = valZeus > 0 ? (valCurrent - valZeus) : 0;
-    var pctDiff = valZeus > 0 ? ((diff / valZeus) * 100) : 0;
-    rmDeltas[ej] = {
-      current: valCurrent,
-      zeus: valZeus,
-      diff: Math.round(diff * 10) / 10,
-      pctDiff: Math.round(pctDiff * 10) / 10,
-      isPositive: (diff > 0),
-      isEqual: (diff === 0)
-    };
   }
 
   // Revisar 'Historial_RMs' para actualizar con cualquier récord reciente del ciclo seleccionado
@@ -1073,6 +1061,25 @@ function getAthleteDashboardData(ss, athleteParam, cycleParam) {
         }
       }
     }
+  }
+
+  // Calcular Deltas vs Base (Zeus compara vs Basal / Atenea compara vs Zeus)
+  var rmDeltas = {};
+  for (var ej in athleteRms) {
+    var valCurrent = parseFloat(athleteRms[ej]) || 0;
+    var valBase = parseFloat(athleteBaseRms[ej]) || 0;
+    var diff = valBase > 0 ? (valCurrent - valBase) : 0;
+    var pctDiff = valBase > 0 ? ((diff / valBase) * 100) : 0;
+    rmDeltas[ej] = {
+      current: valCurrent,
+      base: valBase,
+      zeus: valBase, // retrocompatibilidad
+      baseName: isZeusSelected ? "Basal (Pre-Zeus)" : "Cierre Zeus",
+      diff: Math.round(diff * 10) / 10,
+      pctDiff: Math.round(pctDiff * 10) / 10,
+      isPositive: (diff > 0.05),
+      isEqual: (Math.abs(diff) <= 0.05)
+    };
   }
 
   var avgIntensidad = intensidadesList.length > 0 ? (intensidadesList.reduce(function(a, b) { return a + b; }, 0) / intensidadesList.length) : 0;
@@ -1190,6 +1197,13 @@ function doPost(e) {
       var esNuevoRm = (data.es_nuevo_rm === true || data.es_nuevo_rm === "true" || data.esNuevoRm === true);
       
       insertRegistroDiario(ss, data, activeCycle, esNuevoRm);
+
+      // Si la categoría es Gimnásticos, guardamos simultáneamente en 'Skills_Gimnasia'
+      var catStr = String(data.categoria || data.category || "").toLowerCase();
+      var currentWeek = getCurrentWeek(ss);
+      if (catStr.indexOf("gimnastic") !== -1 || catStr.indexOf("skill") !== -1) {
+        insertSkillsGimnasia(ss, data, activeCycle, currentWeek);
+      }
       
       // Doble flujo de ingesta para RMs: ÚNICAMENTE si esNuevoRm fue activado explícitamente
       var rmRes = null;
@@ -1201,6 +1215,9 @@ function doPost(e) {
       var cycleTransition = evaluarYProcesarCierreCiclo(ss, data);
       
       var msg = "Entrenamiento guardado en pestaña '" + TABS.REGISTRO_DIARIO + "' para " + (data.athlete || "Atleta");
+      if (catStr.indexOf("gimnastic") !== -1 || catStr.indexOf("skill") !== -1) {
+        msg += " | 🤸 Skill archivado en '" + TABS.SKILLS_GIMNASIA + "'";
+      }
       if (esNuevoRm) {
         msg += " | ⭐ Nuevo 1RM Final registrado en pestaña '" + TABS.RM_CICLO_2 + "' e Historial_RMs";
       }
@@ -1210,9 +1227,19 @@ function doPost(e) {
       
       return sendJsonResponse("success", msg, {
         ciclo: activeCycle,
+        semana: currentWeek,
         esNuevoRm: esNuevoRm,
         rmResult: rmRes,
         cycleTransition: cycleTransition
+      });
+    }
+    else if (data.type === "skills_gimnasia" || data.type === "gimnasia" || data.type === "skill") {
+      var currentWeek = getCurrentWeek(ss);
+      var gRes = insertSkillsGimnasia(ss, data, activeCycle, currentWeek);
+      return sendJsonResponse("success", "Skill de gimnasia archivado exitosamente en pestaña '" + TABS.SKILLS_GIMNASIA + "'", {
+        ciclo: activeCycle,
+        semana: currentWeek,
+        row: gRes.row
       });
     } 
     else if (data.type === "crear_informe_drive" || data.type === "informe_drive") {
@@ -1835,50 +1862,77 @@ function parseRmSheetValues(sheet) {
 
 /**
  * LÓGICA DE LECTURA DINÁMICA DE RMs CON CASCADA Y EQUIVALENCIA OLÍMPICA:
- * - Ciclo 'Zeus' (o 'Ciclo_01'): Carga 'RM_Zeus' (o 'RM_Atletas').
- * - Ciclo 'Atenea' (o 'Ciclo_02') u otro: Concatena dinámicamente 'RM_' + cycleName ('RM_Atenea').
- * - Cascada: si un ejercicio no fue testeado en el ciclo actual, cae a la base de Zeus.
+ * - Ciclo 'Basal' (o 'Pre-Zeus'): Carga marcas basales pre-Zeus ('RM_Atletas' / 'RM_Basal').
+ * - Ciclo 'Zeus': Carga 'RM_Zeus' (33 marcas del cierre de Zeus con cascada sobre marcas basales).
+ * - Ciclo 'Atenea': Carga 'RM_Atenea' (con cascada completa sobre la base vigente de Zeus).
  */
 function getRmData(ss, cycleName) {
   if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
   var targetCycle = cycleName || getActiveCycle(ss) || "Atenea";
+  var cNorm = targetCycle.toLowerCase();
 
-  // 1. Cargar Pestaña Base Intacta (Zeus / Ciclo 1)
-  var baseSheet = ss.getSheetByName(TABS.RM_ZEUS) || ss.getSheetByName(TABS.RM_ATLETAS) || ss.getSheetByName("Atletas_1RM");
-  var baseMap = parseRmSheetValues(baseSheet);
+  // 1. Cargar Pestaña Base Basal Pre-Zeus (RM_Atletas / RM_Basal)
+  var basalSheet = ss.getSheetByName(TABS.RM_ATLETAS) || ss.getSheetByName(TABS.RM_BASAL) || ss.getSheetByName("Atletas_1RM");
+  var basalMap = parseRmSheetValues(basalSheet);
 
-  // Si el ciclo solicitado es Zeus, devolvemos directamente la base de Zeus
-  if (targetCycle.toLowerCase() === "zeus" || targetCycle.toLowerCase() === "ciclo_01" || targetCycle.toLowerCase() === "1") {
-    return applyRmEquivalences(baseMap);
+  if (cNorm === "basal" || cNorm === "pre-zeus" || cNorm === "basales") {
+    return applyRmEquivalences(basalMap);
   }
 
-  // 2. Cargar pestaña del ciclo solicitado dinámicamente ("RM_" + targetCycle)
-  var dynamicSheetName = "RM_" + targetCycle;
-  var cycleSheet = ss.getSheetByName(dynamicSheetName) ||
-                   (targetCycle.toLowerCase() === "atenea" ? (ss.getSheetByName("RM_Atenea") || ss.getSheetByName("RM_Ciclo_02")) : null);
-  var cycleMap = parseRmSheetValues(cycleSheet);
+  // 2. Cargar RMs oficiales del Cierre de Zeus ('RM_Zeus')
+  var zeusSheet = ss.getSheetByName(TABS.RM_ZEUS);
+  var zeusMap = parseRmSheetValues(zeusSheet);
 
-  // 3. Fusión en Cascada: La base de Zeus es el cimiento completo
-  var cascadeMap = {};
-  for (var ath in baseMap) {
-    cascadeMap[ath] = {};
-    for (var ej in baseMap[ath]) {
-      cascadeMap[ath][ej] = baseMap[ath][ej];
+  // Fusión en cascada para Zeus (cimientos basales pre-Zeus + récords oficiales de cierre de Zeus)
+  var zeusCascade = {};
+  for (var ath in basalMap) {
+    zeusCascade[ath] = {};
+    for (var ej in basalMap[ath]) {
+      zeusCascade[ath][ej] = basalMap[ath][ej];
     }
   }
-
-  // Sobrescribir con marcas del ciclo solicitado ÚNICAMENTE si existen y son > 0
-  for (var ath in cycleMap) {
-    if (!cascadeMap[ath]) cascadeMap[ath] = {};
-    for (var ej in cycleMap[ath]) {
-      var v = cycleMap[ath][ej];
+  for (var ath in zeusMap) {
+    if (!zeusCascade[ath]) zeusCascade[ath] = {};
+    for (var ej in zeusMap[ath]) {
+      var v = zeusMap[ath][ej];
       if (v !== undefined && v !== null && !isNaN(v) && Number(v) > 0) {
-        cascadeMap[ath][ej] = Number(v);
+        zeusCascade[ath][ej] = Number(v);
       }
     }
   }
 
-  return applyRmEquivalences(cascadeMap);
+  if (cNorm === "zeus" || cNorm === "ciclo_01" || cNorm === "1") {
+    return applyRmEquivalences(zeusCascade);
+  }
+
+  // 3. Cargar Ciclo Atenea (u otro ciclo activo)
+  var dynamicSheetName = "RM_" + targetCycle;
+  var cycleSheet = ss.getSheetByName(dynamicSheetName) ||
+                   (cNorm === "atenea" ? (ss.getSheetByName("RM_Atenea") || ss.getSheetByName("RM_Ciclo_02")) : null);
+  var cycleMap = parseRmSheetValues(cycleSheet);
+
+  // Fusión en Cascada para Atenea:
+  // Su base de trabajo (100% de referencia) es el Cierre de Zeus completo
+  var ateneaCascade = {};
+  for (var ath in zeusCascade) {
+    ateneaCascade[ath] = {};
+    for (var ej in zeusCascade[ath]) {
+      ateneaCascade[ath][ej] = zeusCascade[ath][ej];
+    }
+  }
+
+  // Sobrescribir con marcas de Atenea ÚNICAMENTE si existen y son > 0
+  for (var ath in cycleMap) {
+    if (!ateneaCascade[ath]) ateneaCascade[ath] = {};
+    for (var ej in cycleMap[ath]) {
+      var v = cycleMap[ath][ej];
+      if (v !== undefined && v !== null && !isNaN(v) && Number(v) > 0) {
+        ateneaCascade[ath][ej] = Number(v);
+      }
+    }
+  }
+
+  return applyRmEquivalences(ateneaCascade);
 }
 
 /**
@@ -1924,6 +1978,88 @@ function initRegistroDiarioHeaders(sheet) {
     "Contador Descarga", "Contador Hipertrofia", "Contador Fuerza Max",
     "Contador Total Fuerza", "RPE", "Fecha_Ordenada", "Sesion_ID",
     "% 1RM Porcentaje", "Duracion_min", "Score_Reps", "Peso_WOD", "Ciclo"
+  ];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  var headerRange = sheet.getRange(1, 1, 1, headers.length);
+  headerRange.setFontWeight("bold");
+  headerRange.setBackground("#0f172a");
+  headerRange.setFontColor("#f8fafc");
+  sheet.setFrozenRows(1);
+}
+
+/**
+ * ============================================================================
+ * INGESTA OFICIAL DE SKILLS DE GIMNASIA
+ * ============================================================================
+ * Inserta en la pestaña 'Skills_Gimnasia' con las 10 columnas oficiales:
+ * [Fecha, Atleta, Skill_Movimiento, Nivel_Progresion, Max_Reps_Unbroken, Volumen_Total, RPE_Calidad, Ciclo, Semana, Notas]
+ */
+function insertSkillsGimnasia(ss, data, activeCycle, currentWeek) {
+  var sheet = ss.getSheetByName(TABS.SKILLS_GIMNASIA);
+  if (!sheet) {
+    sheet = ss.insertSheet(TABS.SKILLS_GIMNASIA);
+    initSkillsGimnasiaHeaders(sheet);
+  }
+
+  var cicloVal = activeCycle || (data && data.ciclo) || getActiveCycle(ss) || "Atenea";
+  var semanaVal = currentWeek || (data && data.semana) || getCurrentWeek(ss) || 1;
+
+  var fechaStr = "";
+  if (data.fecha) {
+    fechaStr = String(data.fecha).substring(0, 10);
+  } else if (data.date) {
+    fechaStr = String(data.date).substring(0, 10);
+  } else {
+    fechaStr = formatDateISO(new Date());
+  }
+
+  var atleta = (data.atleta || data.athlete || "").toString().trim();
+  var skill = (data.skillMovimiento || data.skill || data.ejercicio || data.exercise || "Skill").toString().trim();
+  var progresion = (data.nivelProgresion || data.progresion || data.variante || data.variant || "Rx / Estándar").toString().trim();
+  
+  var series = Number(data.series !== undefined ? data.series : 1) || 1;
+  var reps = Number(data.maxRepsUnbroken !== undefined ? data.maxRepsUnbroken : (data.unbroken !== undefined ? data.unbroken : (data.reps !== undefined ? data.reps : 0))) || 0;
+  var volumenTotal = Number(data.volumenTotal !== undefined ? data.volumenTotal : (series * reps)) || (series * reps);
+  var rpeCalidad = (data.rpeCalidad !== undefined ? data.rpeCalidad : (data.rpe !== undefined ? data.rpe : "")).toString().trim();
+  var notas = (data.notas || data.notes || "").toString().trim();
+
+  var rowData = [
+    fechaStr,      // Col A (1): Fecha
+    atleta,        // Col B (2): Atleta
+    skill,         // Col C (3): Skill_Movimiento
+    progresion,    // Col D (4): Nivel_Progresion
+    reps,          // Col E (5): Max_Reps_Unbroken
+    volumenTotal,  // Col F (6): Volumen_Total
+    rpeCalidad,    // Col G (7): RPE_Calidad
+    cicloVal,      // Col H (8): Ciclo
+    semanaVal,     // Col I (9): Semana
+    notas          // Col J (10): Notas
+  ];
+
+  var targetRow = getFirstEmptyRowByColumnA(sheet);
+  sheet.getRange(targetRow, 1, 1, 10).setValues([rowData]);
+  SpreadsheetApp.flush();
+
+  ensureSingleCleanBottomRow(sheet, targetRow);
+  logScriptEvent(ss, "INSERT_SKILLS_GIMNASIA", atleta, targetRow, "HEALTHY", "Skill: " + skill + " | Prog: " + progresion + " | Reps: " + reps + " | Vol: " + volumenTotal + " | Ciclo: " + cicloVal + " | Sem: " + semanaVal);
+  return { status: "success", row: targetRow };
+}
+
+/**
+ * Inicializa encabezados de 'Skills_Gimnasia' con las 10 columnas oficiales
+ */
+function initSkillsGimnasiaHeaders(sheet) {
+  var headers = [
+    "Fecha",
+    "Atleta",
+    "Skill_Movimiento",
+    "Nivel_Progresion",
+    "Max_Reps_Unbroken",
+    "Volumen_Total",
+    "RPE_Calidad",
+    "Ciclo",
+    "Semana",
+    "Notas"
   ];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   var headerRange = sheet.getRange(1, 1, 1, headers.length);
@@ -2041,6 +2177,88 @@ function logScriptEvent(ss, eventType, atleta, targetRow, status, details) {
  */
 function initLogScriptHeaders(sheet) {
   var headers = ["Timestamp", "Tipo_Evento", "Atleta", "Fila_Destino", "Estado", "Detalles_Diagnostico"];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  var headerRange = sheet.getRange(1, 1, 1, headers.length);
+  headerRange.setFontWeight("bold");
+  headerRange.setBackground("#0f172a");
+  headerRange.setFontColor("#f8fafc");
+  sheet.setFrozenRows(1);
+}
+
+/**
+ * ============================================================================
+ * INGESTA OFICIAL DE SKILLS DE GIMNASIA
+ * ============================================================================
+ * Inserta en la pestaña 'Skills_Gimnasia' con las 10 columnas oficiales:
+ * [Fecha, Atleta, Skill_Movimiento, Nivel_Progresion, Max_Reps_Unbroken, Volumen_Total, RPE_Calidad, Ciclo, Semana, Notas]
+ */
+function insertSkillsGimnasia(ss, data, activeCycle, currentWeek) {
+  var sheet = ss.getSheetByName(TABS.SKILLS_GIMNASIA);
+  if (!sheet) {
+    sheet = ss.insertSheet(TABS.SKILLS_GIMNASIA);
+    initSkillsGimnasiaHeaders(sheet);
+  }
+
+  var cicloVal = activeCycle || (data && data.ciclo) || getActiveCycle(ss) || "Atenea";
+  var semanaVal = currentWeek || (data && data.semana) || getCurrentWeek(ss) || 1;
+
+  var fechaStr = "";
+  if (data.fecha) {
+    fechaStr = String(data.fecha).substring(0, 10);
+  } else if (data.date) {
+    fechaStr = String(data.date).substring(0, 10);
+  } else {
+    fechaStr = formatDateISO(new Date());
+  }
+
+  var atleta = (data.atleta || data.athlete || "").toString().trim();
+  var skill = (data.skillMovimiento || data.skill || data.ejercicio || data.exercise || "Skill").toString().trim();
+  var progresion = (data.nivelProgresion || data.progresion || data.variante || data.variant || "Rx / Estándar").toString().trim();
+  
+  var series = Number(data.series !== undefined ? data.series : 1) || 1;
+  var reps = Number(data.maxRepsUnbroken !== undefined ? data.maxRepsUnbroken : (data.unbroken !== undefined ? data.unbroken : (data.reps !== undefined ? data.reps : 0))) || 0;
+  var volumenTotal = Number(data.volumenTotal !== undefined ? data.volumenTotal : (series * reps)) || (series * reps);
+  var rpeCalidad = (data.rpeCalidad !== undefined ? data.rpeCalidad : (data.rpe !== undefined ? data.rpe : "")).toString().trim();
+  var notas = (data.notas || data.notes || "").toString().trim();
+
+  var rowData = [
+    fechaStr,      // Col A (1): Fecha
+    atleta,        // Col B (2): Atleta
+    skill,         // Col C (3): Skill_Movimiento
+    progresion,    // Col D (4): Nivel_Progresion
+    reps,          // Col E (5): Max_Reps_Unbroken
+    volumenTotal,  // Col F (6): Volumen_Total
+    rpeCalidad,    // Col G (7): RPE_Calidad
+    cicloVal,      // Col H (8): Ciclo
+    semanaVal,     // Col I (9): Semana
+    notas          // Col J (10): Notas
+  ];
+
+  var targetRow = getFirstEmptyRowByColumnA(sheet);
+  sheet.getRange(targetRow, 1, 1, 10).setValues([rowData]);
+  SpreadsheetApp.flush();
+
+  ensureSingleCleanBottomRow(sheet, targetRow);
+  logScriptEvent(ss, "INSERT_SKILLS_GIMNASIA", atleta, targetRow, "HEALTHY", "Skill: " + skill + " | Prog: " + progresion + " | Reps: " + reps + " | Vol: " + volumenTotal + " | Ciclo: " + cicloVal + " | Sem: " + semanaVal);
+  return { status: "success", row: targetRow };
+}
+
+/**
+ * Inicializa encabezados de 'Skills_Gimnasia' con las 10 columnas oficiales
+ */
+function initSkillsGimnasiaHeaders(sheet) {
+  var headers = [
+    "Fecha",
+    "Atleta",
+    "Skill_Movimiento",
+    "Nivel_Progresion",
+    "Max_Reps_Unbroken",
+    "Volumen_Total",
+    "RPE_Calidad",
+    "Ciclo",
+    "Semana",
+    "Notas"
+  ];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   var headerRange = sheet.getRange(1, 1, 1, headers.length);
   headerRange.setFontWeight("bold");

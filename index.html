@@ -24,10 +24,10 @@
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e6b422' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 6C5 9 5 13 8 16M17 6C19 9 19 13 16 16M12 3V21M9 4L12 2L15 4M8 10L12 8L16 10M8 17L12 15L16 17'/%3E%3C/svg%3E">
   <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%2306080c'/%3E%3Cpath d='M30 30C20 45 20 65 35 80M70 30C80 45 80 65 65 80M50 15V85M35 20L50 10L65 20M30 50L50 40L70 50M30 75L50 65L70 75' stroke='%23e6b422' stroke-width='6' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E">
 
-  <!-- Tipografías Técnicas & de Telemetría: Plus Jakarta Sans y JetBrains Mono -->
+  <!-- Tipografías Técnicas & de Telemetría: Plus Jakarta Sans y JetBrains Mono (Cero Serif) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=JetBrains+Mono:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- Cache control para forzar actualización instantánea en móviles de atletas -->
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
@@ -38,7 +38,7 @@
   <!-- Canvas Confetti para Celebración Épica de Récords Personales (PR) -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
 
-  <link rel="stylesheet" href="css/styles.css?v=2.5.0">
+  <link rel="stylesheet" href="css/styles.css?v=2.6.0">
 </head>
 <body>
   <!-- Fondo cinemático del Partenón con velo oscuro -->
@@ -713,7 +713,7 @@
               <div class="controls-center-group">
                 <div class="macro-progress-box">
                   <div class="macro-phase-title">
-                    <span id="phaseTitleText">Fase: Acumulación (70-75% 1RM) · Sem 1/12</span>
+                    <span id="phaseTitleText">Semana 1/12 · Acumulación (70-75%)</span>
                   </div>
                   <div class="macro-segmented-bar" id="macroSegmentedBar" title="Progreso de 12 semanas del macrociclo">
                     <span class="macro-seg-block active" data-week="1"></span>
@@ -961,8 +961,8 @@
               <div class="rms-title-wrap">
                 <span class="rms-icon">🏆</span>
                 <div>
-                  <h3 class="rms-heading">Marcas de 1RM & Telemetría (<span id="rmsCycleNameBadge">⚡ Atenea vs Zeus</span>)</h3>
-                  <p class="rms-subheading">Valores consolidados con delta comparativo de mejora respecto al ciclo anterior.</p>
+                  <h3 class="rms-heading">Marcas de 1RM & Telemetría (<span id="rmsCycleNameBadge">⚡ Atenea (Base: Cierre Zeus)</span>)</h3>
+                  <p class="rms-subheading" id="rmsBlockSubheading">Base de trabajo al 100% de referencia para calcular zonas de carga (70-75% en Acumulación).</p>
                 </div>
               </div>
               <div class="rms-count-pill" id="dashboardRmsCountPill">0 RMs Registrados</div>
