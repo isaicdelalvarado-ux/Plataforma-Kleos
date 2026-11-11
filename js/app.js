@@ -1684,17 +1684,21 @@ document.addEventListener('DOMContentLoaded', () => {
       } else if (category === 'Cardio') {
         const distRaw = wodReps ? wodReps.value.trim() : '';
         if (!distRaw) {
-          showToast('⚠️ Por favor indica la Distancia recorrida en km (ej: 5.0)', 'error');
+          showToast('⚠️ Por favor indica la Distancia recorrida en km (ej: 5.0 o 3.7)', 'error');
           if (wodReps) wodReps.focus();
           return;
         }
         seriesVal = parseInt(document.getElementById('wodSeries').value, 10) || 1;
-        distanciaVal = parseFloat(distRaw) || 0;
+        if (seriesVal < 1) seriesVal = 1;
+        const cleanDist = distRaw.replace(',', '.');
+        let parsedDist = parseFloat(cleanDist) || 0;
+        if (parsedDist >= 100) parsedDist = parsedDist / 1000; // Normalización si el atleta ingresó metros (ej: 3700 -> 3.7)
+        distanciaVal = Math.round(parsedDist * 1000) / 1000;
         repsVal = distanciaVal;
         duracionVal = wodDuration ? wodDuration.value.trim() : '';
         weightVal = 0;
         rmVal = 0;
-        scoreRepsVal = 0;
+        scoreRepsVal = null;
         pesoWodVal = 0;
       } else {
         seriesVal = parseInt(document.getElementById('wodSeries').value, 10) || 1;
@@ -1723,7 +1727,7 @@ document.addEventListener('DOMContentLoaded', () => {
         unRM: rmVal,
         distancia: distanciaVal,
         duracion: duracionVal,
-        scoreReps: (category === 'Metcon / WOD') ? parseFloat(scoreRepsVal) : 0,
+        scoreReps: (category === 'Metcon / WOD') ? parseFloat(scoreRepsVal) : null,
         rondasCompletas: rondasVal,
         repsAdicionales: extraVal,
         emomMinutosTotales: emomTotalesVal,

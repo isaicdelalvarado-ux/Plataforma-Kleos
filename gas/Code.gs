@@ -1416,12 +1416,13 @@ function insertRegistroDiario(ss, data, activeCycle, esNuevoRm) {
                      ((data.ScoreReps !== undefined && data.ScoreReps !== null && data.ScoreReps !== "") ? data.ScoreReps :
                      ((data.score_reps !== undefined && data.score_reps !== null && data.score_reps !== "") ? data.score_reps : null)));
 
-  // Detección Universal de Categorías (Sin filtros por nombre exacto de ejercicio)
+  // Detección Universal de Categorías (Con Precedencia Estricta para Cardio/Carrera)
   var catLower = categoria.toLowerCase();
-  var esLifting = (categoria === "Fuerza" || categoria === "Levantamiento Olímpico" || catLower.indexOf("fuerza") !== -1 || catLower.indexOf("olímpico") !== -1 || catLower.indexOf("olimpico") !== -1);
-  var esGimnasticos = (categoria === "Gimnásticos" || catLower.indexOf("gimnastic") !== -1);
-  var esMetcon = (categoria === "Metcon / WOD" || catLower.indexOf("metcon") !== -1 || catLower.indexOf("wod") !== -1 || rawScoreReps !== null);
-  var esCardio = (categoria === "Cardio" || catLower.indexOf("cardio") !== -1 || catLower.indexOf("carrera") !== -1);
+  var ejLower = rawEjercicio.toLowerCase();
+  var esCardio = (categoria === "Cardio" || catLower.indexOf("cardio") !== -1 || catLower.indexOf("carrera") !== -1 || ejLower.indexOf("carrera") !== -1);
+  var esLifting = (!esCardio && (categoria === "Fuerza" || categoria === "Levantamiento Olímpico" || catLower.indexOf("fuerza") !== -1 || catLower.indexOf("olímpico") !== -1 || catLower.indexOf("olimpico") !== -1));
+  var esGimnasticos = (!esCardio && (categoria === "Gimnásticos" || catLower.indexOf("gimnastic") !== -1));
+  var esMetcon = (!esCardio && !esLifting && !esGimnasticos && (categoria === "Metcon / WOD" || catLower.indexOf("metcon") !== -1 || catLower.indexOf("wod") !== -1 || (rawScoreReps !== null && Number(rawScoreReps) > 0)));
 
   // AUDITORÍA Y HOMOLOGACIÓN SEMÁNTICA DE WODs (GEMINI 1.5 FLASH)
   var ejercicio = rawEjercicio;
@@ -1443,7 +1444,34 @@ function insertRegistroDiario(ss, data, activeCycle, esNuevoRm) {
   var cntTotalFuerza = 0;
   var pctPorcentaje = 0;
 
-  if (esLifting) {
+  if (esCardio) {
+    // --- CARDIO (CARRERA / RESISTENCIA AERÓBICA CERO MÁQUINAS) ---
+    series = Number(data.series !== undefined && data.series !== null && data.series !== ""
+      ? data.series
+      : (data.intervals !== undefined && data.intervals !== null && data.intervals !== "" ? data.intervals : 1));
+    if (isNaN(series) || series < 1) series = 1;
+
+    var rawDistancia = data.distancia !== undefined ? data.distancia
+      : (data.distance !== undefined ? data.distance
+      : (data.repsOrDistance !== undefined ? data.repsOrDistance : 0));
+    
+    repsOrDistance = parseCardioDistance(rawDistancia);
+
+    cargaKg = 0;
+    rmKg = 0;
+    pctReal = 0;
+    repsTotales = Math.round(series * repsOrDistance * 1000) / 1000; // Kilometraje Total
+    tonelaje = 0;
+    zonaCarga = "Cardio";
+    cntDescarga = 0;
+    cntHipertrofia = 0;
+    cntFuerzaMax = 0;
+    cntTotalFuerza = 0;
+    pctPorcentaje = 0;
+    scoreReps = "";
+    pesoWod = 0;
+
+  } else if (esLifting) {
     // --- FUERZA / LEVANTAMIENTO OLÍMPICO ---
     series = Number(data.series !== undefined ? data.series : 1) || 1;
     var parsedReps = parseFloat(String(data.reps !== undefined ? data.reps : (data.repsOrDistance !== undefined ? data.repsOrDistance : 1)).replace(',', '.'));
@@ -1579,33 +1607,6 @@ function insertRegistroDiario(ss, data, activeCycle, esNuevoRm) {
     pctPorcentaje = 0;
     pesoWod = 0;
 
-  } else if (esCardio) {
-    // --- CARDIO ---
-    series = Number(data.series !== undefined && data.series !== null && data.series !== ""
-      ? data.series
-      : (data.intervals !== undefined && data.intervals !== null && data.intervals !== "" ? data.intervals : 1));
-    if (isNaN(series) || series < 1) series = 1;
-
-    var rawDistancia = data.distancia !== undefined ? data.distancia
-      : (data.distance !== undefined ? data.distance
-      : (data.repsOrDistance !== undefined ? data.repsOrDistance : 0));
-    
-    repsOrDistance = parseCardioDistance(rawDistancia);
-
-    cargaKg = 0;
-    rmKg = 0;
-    pctReal = 0;
-    repsTotales = Math.round(series * repsOrDistance * 1000) / 1000; // Kilometraje
-    tonelaje = 0;
-    zonaCarga = "Cardio";
-    cntDescarga = 0;
-    cntHipertrofia = 0;
-    cntFuerzaMax = 0;
-    cntTotalFuerza = 0;
-    pctPorcentaje = 0;
-    scoreReps = "";
-    pesoWod = 0;
-
   } else {
     // --- CATEGORÍA DESCONOCIDA ---
     series = Number(data.series || 1);
@@ -1660,7 +1661,10 @@ function insertRegistroDiario(ss, data, activeCycle, esNuevoRm) {
   ensureSingleCleanBottomRow(sheet, targetRow);
 
   // Telemetría de Monitoreo Proactivo en 'Log_Script'
-  logScriptEvent(ss, "INSERT_REGISTRO_DIARIO", atleta, targetRow, "HEALTHY", "Cat: " + categoria + " | Ej: " + ejercicio + " | Carga: " + cargaKg + "kg | 1RM Ref: " + rmKg + "kg (%: " + pctPorcentaje + "%) | EsNuevoRM: " + esNuevoRm + " | RPE: " + rpe);
+  var logDetalle = esCardio
+    ? ("Cat: " + categoria + " | Ej: " + ejercicio + " | Distancia: " + repsOrDistance + "km | Series: " + series + " | TotalKm: " + repsTotales + "km | RPE: " + rpe)
+    : ("Cat: " + categoria + " | Ej: " + ejercicio + " | Carga: " + cargaKg + "kg | 1RM Ref: " + rmKg + "kg (%: " + pctPorcentaje + "%) | EsNuevoRM: " + esNuevoRm + " | RPE: " + rpe);
+  logScriptEvent(ss, "INSERT_REGISTRO_DIARIO", atleta, targetRow, "HEALTHY", logDetalle);
   SpreadsheetApp.flush();
 }
 
