@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-11-08 21:07:41",
+  "timestamp": "2026-11-18 21:06:33",
   "estado_general": "SALUDABLE",
   "web_watchdog": {
     "ok": true,
     "endpoint_health": "HEALTHY",
-    "latency_sec": 5.14,
+    "latency_sec": 5.345,
     "clean_squat_in_api": true,
     "clean_squat_in_local_code": true,
     "readonly_trap_free": true,
@@ -12,14 +12,14 @@
   },
   "sheets_watchdog": {
     "ok": true,
-    "total_registros_diario": 976,
-    "total_wellness": 269,
+    "total_registros_diario": 1180,
+    "total_wellness": 321,
     "total_skills_gimnasia": 0,
-    "total_rm_records": 85,
+    "total_rm_records": 104,
     "rm_counts": {
-      "RM_Atletas": 85,
+      "RM_Atletas": 104,
       "RM_Zeus": 32,
-      "RM_Atenea": 32
+      "RM_Atenea": 49
     },
     "repaired_formulas_rows": [],
     "repaired_isolations_rows": [],

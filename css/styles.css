@@ -2662,3 +2662,17 @@ input[type="range"]::-webkit-slider-thumb:hover {
   padding: 2rem;
   font-style: italic;
 }
+
+/* Garantía de interacción y capa superior para selector de variantes / progresiones */
+#variantGroup {
+  position: relative;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+#wodVariant {
+  pointer-events: auto;
+  cursor: pointer;
+  position: relative;
+  z-index: 10;
+}

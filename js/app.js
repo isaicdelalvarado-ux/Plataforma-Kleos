@@ -293,7 +293,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (vSelect) {
         vSelect.addEventListener('change', () => {
-          updateExerciseRmState();
+          if (wodCategory && (wodCategory.value === 'Fuerza' || wodCategory.value === 'Levantamiento Olímpico')) {
+            updateExerciseRmState();
+          }
         });
       }
     }
@@ -303,27 +305,36 @@ document.addEventListener('DOMContentLoaded', () => {
     const currentCat = wodCategory ? wodCategory.value : 'Fuerza';
     const vLabel = vGroup.querySelector('label') || document.getElementById('lblVariant');
 
+    // Garantizar que el selector nunca quede deshabilitado
+    vSelect.disabled = false;
+    vSelect.removeAttribute('disabled');
+
     if (currentCat === 'Gimnásticos') {
       if (vLabel) vLabel.textContent = 'Columna D: Nivel de Progresión / Estilo del Skill';
       if (vBadge) {
         vBadge.textContent = 'Progresiones de Gimnasia';
         vBadge.className = 'badge';
       }
-      vSelect.innerHTML = `
-        <option value="Rx / Estándar" selected>⚡ Rx / Estándar (Sin asistencia)</option>
-        <option value="Estricto (Strict)">💪 Estricto (Strict / Fuerza)</option>
-        <option value="Kipping">🔄 Kipping (Balanceo dinámico)</option>
-        <option value="Butterfly">🦋 Butterfly (Mariposa / Velocidad)</option>
-        <option value="Con Banda / Elástico">🎗️ Con Banda / Elástico</option>
-        <option value="Negativas / Excéntricas">⏱️ Negativas / Excéntricas</option>
-        <option value="Con Déficit / Lastre">⚖️ Con Déficit / Lastre</option>
-        <option value="Pies en Cajón / Suelo">📦 Pies en Cajón / Suelo</option>
-        <option value="En Barra Alta">📏 En Barra Alta</option>
-        <option value="En Anillas (Rings)">⭕ En Anillas (Rings)</option>
-      `;
+      if (vSelect.dataset.variantMode !== 'gimnasticos' || vSelect.options.length <= 1) {
+        vSelect.innerHTML = `
+          <option value="Rx / Estándar" selected>⚡ Rx / Estándar (Sin asistencia)</option>
+          <option value="Estricto (Strict)">💪 Estricto (Strict / Fuerza)</option>
+          <option value="Kipping">🔄 Kipping (Balanceo dinámico)</option>
+          <option value="Butterfly">🦋 Butterfly (Mariposa / Velocidad)</option>
+          <option value="Con Banda / Elástico">🎗️ Con Banda / Elástico</option>
+          <option value="Negativas / Excéntricas">⏱️ Negativas / Excéntricas</option>
+          <option value="Con Déficit / Lastre">⚖️ Con Déficit / Lastre</option>
+          <option value="Pies en Cajón / Suelo">📦 Pies en Cajón / Suelo</option>
+          <option value="En Barra Alta">📏 En Barra Alta</option>
+          <option value="En Anillas (Rings)">⭕ En Anillas (Rings)</option>
+        `;
+        vSelect.dataset.variantMode = 'gimnasticos';
+      }
       vGroup.style.display = 'block';
       return;
     }
+
+    vSelect.dataset.variantMode = currentCat;
 
     if (vLabel) vLabel.textContent = 'Variante Técnica (High Hang, Low Hang, Desde Tacos...)';
 
@@ -1029,7 +1040,10 @@ document.addEventListener('DOMContentLoaded', () => {
         rmStatusBadge.textContent = '🤸 Skill Gimnástico (Auto-archivado en Skills_Gimnasia y Registro_Diario)';
         rmStatusBadge.className = 'badge';
       }
-      updateVariantOptions();
+      if (wodVariant) {
+        wodVariant.disabled = false;
+        wodVariant.removeAttribute('disabled');
+      }
 
     } else if (category === 'Metcon / WOD') {
       // 3. METCON / WOD
@@ -1179,7 +1193,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (wodVariant) {
     wodVariant.addEventListener('change', () => {
-      updateExerciseRmState();
+      if (wodCategory && (wodCategory.value === 'Fuerza' || wodCategory.value === 'Levantamiento Olímpico')) {
+        updateExerciseRmState();
+      }
     });
   }
 
@@ -1715,7 +1731,7 @@ document.addEventListener('DOMContentLoaded', () => {
         categoria: category,
         ejercicio: finalExercise,
         variante: variantVal,
-        skillMovimiento: finalExercise,
+        skillMovimiento: (category === 'Gimnásticos') ? exercise : finalExercise,
         nivelProgresion: (category === 'Gimnásticos') ? (variantVal || 'Rx / Estándar') : '',
         maxRepsUnbroken: (category === 'Gimnásticos') ? (parseFloat(repsVal) || 0) : 0,
         volumenTotal: (category === 'Gimnásticos') ? (seriesVal * (parseFloat(repsVal) || 0)) : 0,
