@@ -1289,8 +1289,9 @@ function doPost(e) {
 
       // Si la categoría es Gimnásticos, guardamos simultáneamente en 'Skills_Gimnasia'
       var catStr = String(data.categoria || data.category || "").toLowerCase();
+      var esSkillGimnasia = (catStr.indexOf("gimnástic") !== -1 || catStr.indexOf("gimnastic") !== -1 || catStr.indexOf("skill") !== -1);
       var currentWeek = getCurrentWeek(ss);
-      if (catStr.indexOf("gimnastic") !== -1 || catStr.indexOf("skill") !== -1) {
+      if (esSkillGimnasia) {
         insertSkillsGimnasia(ss, data, activeCycle, currentWeek);
       }
       
@@ -1304,7 +1305,7 @@ function doPost(e) {
       var cycleTransition = evaluarYProcesarCierreCiclo(ss, data);
       
       var msg = "Entrenamiento guardado en pestaña '" + TABS.REGISTRO_DIARIO + "' para " + (data.athlete || "Atleta");
-      if (catStr.indexOf("gimnastic") !== -1 || catStr.indexOf("skill") !== -1) {
+      if (esSkillGimnasia) {
         msg += " | 🤸 Skill archivado en '" + TABS.SKILLS_GIMNASIA + "'";
       }
       if (esNuevoRm) {
@@ -1421,7 +1422,7 @@ function insertRegistroDiario(ss, data, activeCycle, esNuevoRm) {
   var ejLower = rawEjercicio.toLowerCase();
   var esCardio = (categoria === "Cardio" || catLower.indexOf("cardio") !== -1 || catLower.indexOf("carrera") !== -1 || ejLower.indexOf("carrera") !== -1);
   var esLifting = (!esCardio && (categoria === "Fuerza" || categoria === "Levantamiento Olímpico" || catLower.indexOf("fuerza") !== -1 || catLower.indexOf("olímpico") !== -1 || catLower.indexOf("olimpico") !== -1));
-  var esGimnasticos = (!esCardio && (categoria === "Gimnásticos" || catLower.indexOf("gimnastic") !== -1));
+  var esGimnasticos = (!esCardio && (categoria === "Gimnásticos" || catLower.indexOf("gimnástic") !== -1 || catLower.indexOf("gimnastic") !== -1));
   var esMetcon = (!esCardio && !esLifting && !esGimnasticos && (categoria === "Metcon / WOD" || catLower.indexOf("metcon") !== -1 || catLower.indexOf("wod") !== -1 || (rawScoreReps !== null && Number(rawScoreReps) > 0)));
 
   // AUDITORÍA Y HOMOLOGACIÓN SEMÁNTICA DE WODs (GEMINI 1.5 FLASH)
@@ -1468,7 +1469,7 @@ function insertRegistroDiario(ss, data, activeCycle, esNuevoRm) {
     cntFuerzaMax = 0;
     cntTotalFuerza = 0;
     pctPorcentaje = 0;
-    scoreReps = "";
+    scoreReps = 0;
     pesoWod = 0;
 
   } else if (esLifting) {
@@ -2270,88 +2271,6 @@ function logScriptEvent(ss, eventType, atleta, targetRow, status, details) {
  */
 function initLogScriptHeaders(sheet) {
   var headers = ["Timestamp", "Tipo_Evento", "Atleta", "Fila_Destino", "Estado", "Detalles_Diagnostico"];
-  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  var headerRange = sheet.getRange(1, 1, 1, headers.length);
-  headerRange.setFontWeight("bold");
-  headerRange.setBackground("#0f172a");
-  headerRange.setFontColor("#f8fafc");
-  sheet.setFrozenRows(1);
-}
-
-/**
- * ============================================================================
- * INGESTA OFICIAL DE SKILLS DE GIMNASIA
- * ============================================================================
- * Inserta en la pestaña 'Skills_Gimnasia' con las 10 columnas oficiales:
- * [Fecha, Atleta, Skill_Movimiento, Nivel_Progresion, Max_Reps_Unbroken, Volumen_Total, RPE_Calidad, Ciclo, Semana, Notas]
- */
-function insertSkillsGimnasia(ss, data, activeCycle, currentWeek) {
-  var sheet = ss.getSheetByName(TABS.SKILLS_GIMNASIA);
-  if (!sheet) {
-    sheet = ss.insertSheet(TABS.SKILLS_GIMNASIA);
-    initSkillsGimnasiaHeaders(sheet);
-  }
-
-  var cicloVal = activeCycle || (data && data.ciclo) || getActiveCycle(ss) || "Atenea";
-  var semanaVal = currentWeek || (data && data.semana) || getCurrentWeek(ss) || 1;
-
-  var fechaStr = "";
-  if (data.fecha) {
-    fechaStr = String(data.fecha).substring(0, 10);
-  } else if (data.date) {
-    fechaStr = String(data.date).substring(0, 10);
-  } else {
-    fechaStr = formatDateISO(new Date());
-  }
-
-  var atleta = (data.atleta || data.athlete || "").toString().trim();
-  var skill = (data.skillMovimiento || data.skill || data.ejercicio || data.exercise || "Skill").toString().trim();
-  var progresion = (data.nivelProgresion || data.progresion || data.variante || data.variant || "Rx / Estándar").toString().trim();
-  
-  var series = Number(data.series !== undefined ? data.series : 1) || 1;
-  var reps = Number(data.maxRepsUnbroken !== undefined ? data.maxRepsUnbroken : (data.unbroken !== undefined ? data.unbroken : (data.reps !== undefined ? data.reps : 0))) || 0;
-  var volumenTotal = Number(data.volumenTotal !== undefined ? data.volumenTotal : (series * reps)) || (series * reps);
-  var rpeCalidad = (data.rpeCalidad !== undefined ? data.rpeCalidad : (data.rpe !== undefined ? data.rpe : "")).toString().trim();
-  var notas = (data.notas || data.notes || "").toString().trim();
-
-  var rowData = [
-    fechaStr,      // Col A (1): Fecha
-    atleta,        // Col B (2): Atleta
-    skill,         // Col C (3): Skill_Movimiento
-    progresion,    // Col D (4): Nivel_Progresion
-    reps,          // Col E (5): Max_Reps_Unbroken
-    volumenTotal,  // Col F (6): Volumen_Total
-    rpeCalidad,    // Col G (7): RPE_Calidad
-    cicloVal,      // Col H (8): Ciclo
-    semanaVal,     // Col I (9): Semana
-    notas          // Col J (10): Notas
-  ];
-
-  var targetRow = getFirstEmptyRowByColumnA(sheet);
-  sheet.getRange(targetRow, 1, 1, 10).setValues([rowData]);
-  SpreadsheetApp.flush();
-
-  ensureSingleCleanBottomRow(sheet, targetRow);
-  logScriptEvent(ss, "INSERT_SKILLS_GIMNASIA", atleta, targetRow, "HEALTHY", "Skill: " + skill + " | Prog: " + progresion + " | Reps: " + reps + " | Vol: " + volumenTotal + " | Ciclo: " + cicloVal + " | Sem: " + semanaVal);
-  return { status: "success", row: targetRow };
-}
-
-/**
- * Inicializa encabezados de 'Skills_Gimnasia' con las 10 columnas oficiales
- */
-function initSkillsGimnasiaHeaders(sheet) {
-  var headers = [
-    "Fecha",
-    "Atleta",
-    "Skill_Movimiento",
-    "Nivel_Progresion",
-    "Max_Reps_Unbroken",
-    "Volumen_Total",
-    "RPE_Calidad",
-    "Ciclo",
-    "Semana",
-    "Notas"
-  ];
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   var headerRange = sheet.getRange(1, 1, 1, headers.length);
   headerRange.setFontWeight("bold");

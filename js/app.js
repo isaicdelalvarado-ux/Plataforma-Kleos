@@ -659,6 +659,9 @@ document.addEventListener('DOMContentLoaded', () => {
           const lblCiclo = document.getElementById('lblCicloActivo');
           if (lblCiclo) lblCiclo.textContent = `🔄 Macrociclo: ${data.activeCycle}`;
         }
+        if (data.currentWeek) {
+          localStorage.setItem('kleos_current_week', String(data.currentWeek));
+        }
 
         renderAthletesSelect(athletesList);
         renderDashboardAthletesSelect(athletesList);
@@ -1753,7 +1756,7 @@ document.addEventListener('DOMContentLoaded', () => {
         es_nuevo_rm: !!(document.getElementById('wodEsNuevoRm') && document.getElementById('wodEsNuevoRm').checked),
         es_cierre_ciclo: !!(document.getElementById('wodCierreCiclo') && document.getElementById('wodCierreCiclo').checked),
         ciclo: localStorage.getItem('kleos_active_cycle') || 'Atenea',
-        semana: 1,
+        semana: parseInt(localStorage.getItem('kleos_current_week'), 10) || 2,
         // Retrocompatibilidad
         date: wodDateInput.value,
         category: category,
@@ -2071,6 +2074,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (data.activeCycle) {
         localStorage.setItem('kleos_active_cycle', data.activeCycle);
+      }
+      if (data.currentWeek) {
+        localStorage.setItem('kleos_current_week', String(data.currentWeek));
       }
       if (data.selectedCycle) {
         currentDashboardCycle = data.selectedCycle;

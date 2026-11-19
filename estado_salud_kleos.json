@@ -1,25 +1,36 @@
 {
-  "timestamp": "2026-11-18 21:06:33",
+  "timestamp": "2026-11-18 21:29:35",
   "estado_general": "SALUDABLE",
   "web_watchdog": {
     "ok": true,
     "endpoint_health": "HEALTHY",
-    "latency_sec": 5.345,
+    "latency_sec": 7.396,
+    "js_syntax_ok": true,
+    "critical_dom_ids_ok": true,
+    "select_locks_free": true,
+    "cache_busting_ok": true,
+    "cache_versions": {
+      "css": "2.4",
+      "js": "2.4"
+    },
     "clean_squat_in_api": true,
     "clean_squat_in_local_code": true,
     "readonly_trap_free": true,
+    "dashboard_e2e_ok": true,
     "issues": []
   },
   "sheets_watchdog": {
     "ok": true,
-    "total_registros_diario": 1180,
+    "ciclo_activo": "Atenea",
+    "semana_actual": "2",
+    "total_registros_diario": 1203,
     "total_wellness": 321,
-    "total_skills_gimnasia": 0,
+    "total_skills_gimnasia": 20,
     "total_rm_records": 104,
     "rm_counts": {
       "RM_Atletas": 104,
       "RM_Zeus": 32,
-      "RM_Atenea": 49
+      "RM_Atenea": 50
     },
     "repaired_formulas_rows": [],
     "repaired_isolations_rows": [],
