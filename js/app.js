@@ -2766,6 +2766,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnOpenCoachWod) {
       btnOpenCoachWod.style.display = isCoach ? 'inline-flex' : 'none';
     }
+    const hoyProgPreview = document.getElementById('hoyProgramPreviewSelect');
+    if (hoyProgPreview) {
+      hoyProgPreview.style.display = isCoach ? 'inline-block' : 'none';
+    }
 
     if (!isCoach) {
       // Privacidad total para rol Atleta: bloquear selectores a su propio nombre
@@ -2959,6 +2963,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- 4. TAB 1: HOY (WOD DEL DÍA + LEADERBOARD) ---
   const hoyDatePicker = document.getElementById('hoyDatePicker');
+  const hoyProgramTag = document.getElementById('hoyProgramTag');
+  const hoyProgramPreviewSelect = document.getElementById('hoyProgramPreviewSelect');
   const hoyDateSubtitle = document.getElementById('hoyDateSubtitle');
   const hoyWodBlocksContainer = document.getElementById('hoyWodBlocksContainer');
   const btnOpenTimerFromHoy = document.getElementById('btnOpenTimerFromHoy');
@@ -2976,6 +2982,9 @@ document.addEventListener('DOMContentLoaded', () => {
       loadDailyLeaderboard();
     });
   }
+  if (hoyProgramPreviewSelect) {
+    hoyProgramPreviewSelect.addEventListener('change', () => loadDailyWod());
+  }
   if (btnOpenTimerFromHoy) {
     btnOpenTimerFromHoy.addEventListener('click', () => switchPwaTab('reloj'));
   }
@@ -2983,13 +2992,24 @@ document.addEventListener('DOMContentLoaded', () => {
   async function loadDailyWod() {
     if (!hoyWodBlocksContainer) return;
     const fecha = (hoyDatePicker && hoyDatePicker.value) || todayStr;
-    const ath = (activePwaSession && activePwaSession.atleta) || (athleteSelect ? athleteSelect.value : '');
+    const isCoach = activePwaSession && String(activePwaSession.rol || '').toLowerCase() === 'coach';
+    const ath = isCoach
+      ? ((athleteSelect && athleteSelect.value) || activePwaSession.atleta)
+      : ((activePwaSession && activePwaSession.atleta) || (athleteSelect ? athleteSelect.value : ''));
+    const progParam = (isCoach && hoyProgramPreviewSelect) ? `&programa=${encodeURIComponent(hoyProgramPreviewSelect.value)}` : '';
     hoyWodBlocksContainer.innerHTML = '<div class="hoy-loading-msg">Calculando bloques y pesos %1RM...</div>';
 
     try {
-      const url = `${currentScriptUrl}?action=getDailyWod&fecha=${encodeURIComponent(fecha)}&atleta=${encodeURIComponent(ath)}`;
+      const url = `${currentScriptUrl}?action=getDailyWod&fecha=${encodeURIComponent(fecha)}&atleta=${encodeURIComponent(ath)}${progParam}`;
       const resp = await fetch(url, { method: 'GET', mode: 'cors' });
       const data = await resp.json();
+
+      if (hoyProgramTag && data && data.programa) {
+        const isComp5 = String(data.programa).toLowerCase().indexOf('comp') !== -1;
+        hoyProgramTag.textContent = isComp5
+          ? `🏆 SUB-PROGRAMA COMPETITIVO · ${data.programa.toUpperCase()}`
+          : `⚡ PROGRAMACIÓN DIARIA · ${data.programa.toUpperCase()}`;
+      }
 
       if (hoyDateSubtitle) {
         const shown = data.fechaMostrada || fecha;
@@ -3385,10 +3405,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --- 7. MODAL COACH "+ PUBLICAR WOD" + PARSER WHATSAPP (<dialog> NATIVO) ---
+  // --- 7. MODAL COACH: PUBLICACIÓN SEMANAL (6 DÍAS), CLONADO Y PROGRAMAS DE ATLETAS ---
   const coachWodModal = document.getElementById('coachWodModal');
+  const coachTabWeekly = document.getElementById('coachTabWeekly');
+  const coachTabAthletes = document.getElementById('coachTabAthletes');
+  const coachWeeklyPane = document.getElementById('coachWeeklyPane');
+  const coachAthletesPane = document.getElementById('coachAthletesPane');
+  const coachAthletesProgramList = document.getElementById('coachAthletesProgramList');
   const coachWodDate = document.getElementById('coachWodDate');
   const coachWodProgram = document.getElementById('coachWodProgram');
+  const btnCloneAteneaToComp5 = document.getElementById('btnCloneAteneaToComp5');
+  const coachWeekSummaryTag = document.getElementById('coachWeekSummaryTag');
+  const coachWeekDayBtns = document.querySelectorAll('#coachWeekDayTabs .weekday-pill');
+  const lblWhatsappDay = document.getElementById('lblWhatsappDay');
   const whatsappWodInput = document.getElementById('whatsappWodInput');
   const btnParseWhatsappWod = document.getElementById('btnParseWhatsappWod');
   const btnAddManualBlock = document.getElementById('btnAddManualBlock');
@@ -3396,6 +3425,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCloseCoachWod = document.getElementById('btnCloseCoachWod');
   const btnCancelCoachWod = document.getElementById('btnCancelCoachWod');
   const btnPublishCoachWod = document.getElementById('btnPublishCoachWod');
+
+  const WEEKDAY_NAMES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  let weeklyDrafts = [[], [], [], [], [], []];
+  let activeCoachDay = 0;
 
   // Fallback de light-dismiss para navegadores sin closedBy nativo (Modern Web Guidance)
   if (coachWodModal && !('closedBy' in HTMLDialogElement.prototype)) {
@@ -3408,6 +3441,55 @@ document.addEventListener('DOMContentLoaded', () => {
     coachWodModal.addEventListener('pointerup', (ev) => {
       if (pressedOutside && isOutsideDialog(ev, coachWodModal)) coachWodModal.close();
     });
+  }
+
+  function addDaysToIso(isoStr, daysOffset) {
+    const parts = String(isoStr || todayStr).split('-');
+    if (parts.length !== 3) return todayStr;
+    const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10) + daysOffset);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function getMondayOfDate(isoStr) {
+    const parts = String(isoStr || todayStr).split('-');
+    const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : (1 - day);
+    d.setDate(d.getDate() + diff);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function readCurrentDayDraftFromDom() {
+    if (!coachDraftBlocks) return [];
+    const items = Array.from(coachDraftBlocks.querySelectorAll('.draft-block-item'));
+    return items.map((el, i) => ({
+      bloque: el.querySelector('.draft-bloque').value.trim(),
+      orden: i + 1,
+      ejercicio: el.querySelector('.draft-ejercicio').value.trim(),
+      esquema: el.querySelector('.draft-esquema').value.trim(),
+      porcentaje: parseFloat(el.querySelector('.draft-pct').value) || 0,
+      notas: el.querySelector('.draft-notas').value.trim()
+    })).filter(b => b.ejercicio || b.esquema || b.bloque);
+  }
+
+  function updateWeekDayCounters() {
+    let totalBlocks = 0;
+    coachWeekDayBtns.forEach(btn => {
+      const dIdx = parseInt(btn.getAttribute('data-day'), 10);
+      const cnt = (weeklyDrafts[dIdx] || []).length;
+      totalBlocks += cnt;
+      const span = btn.querySelector('.wd-cnt');
+      if (span) span.textContent = String(cnt);
+      btn.classList.toggle('active', dIdx === activeCoachDay);
+    });
+    if (coachWeekSummaryTag) {
+      coachWeekSummaryTag.textContent = `${totalBlocks} bloque(s) en la semana`;
+    }
+    if (lblWhatsappDay) {
+      const startIso = (coachWodDate && coachWodDate.value) || getMondayOfDate(todayStr);
+      const dayIso = addDaysToIso(startIso, activeCoachDay);
+      lblWhatsappDay.textContent = `📋 Pegar WOD desde WhatsApp · ${WEEKDAY_NAMES[activeCoachDay]} (${dayIso})`;
+    }
   }
 
   function addDraftBlockRow(data = {}) {
@@ -3423,15 +3505,26 @@ document.addEventListener('DOMContentLoaded', () => {
       <input type="text" class="draft-esquema draft-full" placeholder="Esquema Sets/Reps (ej. 5 x 5)" value="${(data.esquema || '').replace(/"/g, '&quot;')}">
       <input type="text" class="draft-notas draft-full" placeholder="Notas del Coach (opcional)" value="${(data.notas || '').replace(/"/g, '&quot;')}">
     `;
-    div.querySelector('.btn-remove-draft').addEventListener('click', () => div.remove());
+    div.querySelector('.btn-remove-draft').addEventListener('click', () => {
+      div.remove();
+      weeklyDrafts[activeCoachDay] = readCurrentDayDraftFromDom();
+      updateWeekDayCounters();
+    });
     coachDraftBlocks.appendChild(div);
+  }
+
+  function renderActiveCoachDayBlocks() {
+    if (!coachDraftBlocks) return;
+    coachDraftBlocks.innerHTML = '';
+    const blocks = weeklyDrafts[activeCoachDay] || [];
+    blocks.forEach(b => addDraftBlockRow(b));
+    updateWeekDayCounters();
   }
 
   function parseWhatsappWodText(rawText) {
     const lines = String(rawText || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const parsed = [];
     lines.forEach((line, idx) => {
-      // Detectar prefijo A), B), C), A., 1)
       let bloqueLabel = `Bloque ${idx + 1}`;
       let rest = line;
       const mPref = line.match(/^([A-Za-z0-9]+)[\)\.\-\:]\s*(.+)$/);
@@ -3439,23 +3532,15 @@ document.addEventListener('DOMContentLoaded', () => {
         bloqueLabel = `Bloque ${mPref[1].toUpperCase()}`;
         rest = mPref[2].trim();
       }
-
-      // Detectar porcentaje (@ 75% o 75% 1RM)
       let pct = 0;
       const mPct = rest.match(/@?\s*(\d{2,3})\s*%/);
-      if (mPct) {
-        pct = parseInt(mPct[1], 10) || 0;
-      }
-
-      // Separar notas después de ' - '
+      if (mPct) pct = parseInt(mPct[1], 10) || 0;
       let notas = '';
       const dashParts = rest.split(/\s+-\s+/);
       if (dashParts.length > 1) {
         rest = dashParts[0].trim();
         notas = dashParts.slice(1).join(' - ').trim();
       }
-
-      // Separar ejercicio y esquema (ej. "Back Squat 5x5 @ 75%")
       let ejercicio = rest.replace(/@?\s*\d{2,3}\s*%(?:\s*1RM)?/i, '').trim();
       let esquema = rest;
       const mSets = ejercicio.match(/^(.*?)\s+(\d+\s*[xX×]\s*\d+.*)$/);
@@ -3463,24 +3548,151 @@ document.addEventListener('DOMContentLoaded', () => {
         ejercicio = mSets[1].trim();
         esquema = mSets[2].trim();
       }
-
       parsed.push({ bloque: bloqueLabel, ejercicio: ejercicio || rest, esquema: esquema, porcentaje: pct, notas: notas });
     });
     return parsed;
   }
 
+  async function loadCoachAthletesPrograms() {
+    if (!coachAthletesProgramList) return;
+    coachAthletesProgramList.innerHTML = '<div class="hoy-loading-msg">Cargando atletas desde Usuarios_Kleos...</div>';
+    try {
+      const resp = await fetch(`${currentScriptUrl}?action=getUsersPrograms`, { method: 'GET', mode: 'cors' });
+      const data = await resp.json();
+      const users = (data && Array.isArray(data.users)) ? data.users : [];
+      if (users.length === 0) {
+        coachAthletesProgramList.innerHTML = '<div class="hoy-loading-msg">No se encontraron usuarios en Usuarios_Kleos.</div>';
+        return;
+      }
+      coachAthletesProgramList.innerHTML = '';
+      users.forEach(u => {
+        const row = document.createElement('div');
+        row.className = 'coach-athlete-prog-row';
+        row.innerHTML = `
+          <div>
+            <div class="lb-ath">${u.atleta}</div>
+            <div class="lb-ej">${u.usuario} &bull; ${u.rol}</div>
+          </div>
+          <select aria-label="Programa de ${u.atleta}">
+            <option value="Atenea"${u.programa === 'Atenea' ? ' selected' : ''}>⚡ Atenea (General)</option>
+            <option value="Atenea_Comp5"${u.programa === 'Atenea_Comp5' ? ' selected' : ''}>🏆 Atenea_Comp5 (5 Dic)</option>
+          </select>
+        `;
+        const sel = row.querySelector('select');
+        sel.addEventListener('change', async () => {
+          const newProg = sel.value;
+          sel.disabled = true;
+          try {
+            const pResp = await fetch(currentScriptUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify({
+                type: 'updateAthleteProgram',
+                rol: activePwaSession ? activePwaSession.rol : 'Coach',
+                targetAtleta: u.atleta,
+                programa: newProg
+              })
+            });
+            const pRes = await pResp.json();
+            if (pRes && pRes.status === 'ok') {
+              showToast(`✅ ${u.atleta} asignado a ${newProg}`, 'success');
+            } else {
+              showToast((pRes && pRes.message) || 'Error actualizando programa.', 'error');
+            }
+          } catch (_) {
+            showToast('Error de red al actualizar programa.', 'error');
+          } finally {
+            sel.disabled = false;
+          }
+        });
+        coachAthletesProgramList.appendChild(row);
+      });
+    } catch (_) {
+      coachAthletesProgramList.innerHTML = '<div class="hoy-loading-msg">Error cargando programas de atletas.</div>';
+    }
+  }
+
+  if (coachTabWeekly && coachTabAthletes) {
+    coachTabWeekly.addEventListener('click', () => {
+      coachTabWeekly.classList.add('active');
+      coachTabAthletes.classList.remove('active');
+      if (coachWeeklyPane) coachWeeklyPane.style.display = 'flex';
+      if (coachAthletesPane) coachAthletesPane.style.display = 'none';
+    });
+    coachTabAthletes.addEventListener('click', () => {
+      coachTabAthletes.classList.add('active');
+      coachTabWeekly.classList.remove('active');
+      if (coachWeeklyPane) coachWeeklyPane.style.display = 'none';
+      if (coachAthletesPane) coachAthletesPane.style.display = 'block';
+      loadCoachAthletesPrograms();
+    });
+  }
+
+  coachWeekDayBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      weeklyDrafts[activeCoachDay] = readCurrentDayDraftFromDom();
+      activeCoachDay = parseInt(btn.getAttribute('data-day'), 10) || 0;
+      renderActiveCoachDayBlocks();
+    });
+  });
+
+  if (coachWodDate) {
+    coachWodDate.addEventListener('change', () => updateWeekDayCounters());
+  }
+
+  if (btnCloneAteneaToComp5) {
+    btnCloneAteneaToComp5.addEventListener('click', async () => {
+      const startIso = (coachWodDate && coachWodDate.value) || getMondayOfDate(todayStr);
+      btnCloneAteneaToComp5.disabled = true;
+      btnCloneAteneaToComp5.textContent = 'Clonando semana...';
+      try {
+        const url = `${currentScriptUrl}?action=getWeeklyWod&fechaInicio=${encodeURIComponent(startIso)}&programa=Atenea`;
+        const resp = await fetch(url, { method: 'GET', mode: 'cors' });
+        const data = await resp.json();
+        const dias = (data && Array.isArray(data.dias)) ? data.dias : [];
+        let clonedCount = 0;
+        weeklyDrafts = [[], [], [], [], [], []];
+        dias.forEach((dObj, i) => {
+          if (i < 6 && Array.isArray(dObj.bloques)) {
+            weeklyDrafts[i] = dObj.bloques.map(b => ({ ...b }));
+            clonedCount += dObj.bloques.length;
+          }
+        });
+        if (coachWodProgram) coachWodProgram.value = 'Atenea_Comp5';
+        activeCoachDay = 0;
+        renderActiveCoachDayBlocks();
+        if (clonedCount > 0) {
+          showToast(`📋 Clonados ${clonedCount} bloques de Atenea → Atenea_Comp5. Edita el tapering y publica.`, 'success');
+        } else {
+          showToast('No había bloques en Atenea para esa semana; borrador listo para Atenea_Comp5.', 'error');
+        }
+      } catch (_) {
+        showToast('Error al clonar semana desde Google Sheets.', 'error');
+      } finally {
+        btnCloneAteneaToComp5.disabled = false;
+        btnCloneAteneaToComp5.textContent = '📋 Clonar semana de Atenea → Atenea_Comp5';
+      }
+    });
+  }
+
   if (btnOpenCoachWod && coachWodModal) {
     btnOpenCoachWod.addEventListener('click', () => {
-      if (coachWodDate) coachWodDate.value = (hoyDatePicker && hoyDatePicker.value) || todayStr;
-      if (coachDraftBlocks && coachDraftBlocks.children.length === 0) {
-        addDraftBlockRow({ bloque: 'A. Fuerza', ejercicio: 'Back Squat', esquema: '5 x 5', porcentaje: 75 });
+      if (coachWodDate && !coachWodDate.value) {
+        coachWodDate.value = getMondayOfDate((hoyDatePicker && hoyDatePicker.value) || todayStr);
       }
+      renderActiveCoachDayBlocks();
       coachWodModal.showModal();
     });
   }
   if (btnCloseCoachWod && coachWodModal) btnCloseCoachWod.addEventListener('click', () => coachWodModal.close());
   if (btnCancelCoachWod && coachWodModal) btnCancelCoachWod.addEventListener('click', () => coachWodModal.close());
-  if (btnAddManualBlock) btnAddManualBlock.addEventListener('click', () => addDraftBlockRow());
+  if (btnAddManualBlock) {
+    btnAddManualBlock.addEventListener('click', () => {
+      addDraftBlockRow();
+      weeklyDrafts[activeCoachDay] = readCurrentDayDraftFromDom();
+      updateWeekDayCounters();
+    });
+  }
 
   if (btnParseWhatsappWod) {
     btnParseWhatsappWod.addEventListener('click', () => {
@@ -3489,61 +3701,60 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Pega al menos una línea (ej. A) Back Squat 5x5 @ 75%)', 'error');
         return;
       }
-      if (coachDraftBlocks) coachDraftBlocks.innerHTML = '';
-      parsed.forEach(b => addDraftBlockRow(b));
-      showToast(`⚡ ${parsed.length} bloques parseados en borrador editable`, 'success');
+      weeklyDrafts[activeCoachDay] = parsed;
+      renderActiveCoachDayBlocks();
+      if (whatsappWodInput) whatsappWodInput.value = '';
+      showToast(`⚡ ${parsed.length} bloques cargados en ${WEEKDAY_NAMES[activeCoachDay]}`, 'success');
     });
   }
 
   if (btnPublishCoachWod) {
     btnPublishCoachWod.addEventListener('click', async () => {
       if (!activePwaSession || String(activePwaSession.rol).toLowerCase() !== 'coach') return;
-      const items = Array.from(coachDraftBlocks ? coachDraftBlocks.querySelectorAll('.draft-block-item') : []);
-      const bloques = items.map((el, i) => ({
-        bloque: el.querySelector('.draft-bloque').value.trim(),
-        orden: i + 1,
-        ejercicio: el.querySelector('.draft-ejercicio').value.trim(),
-        esquema: el.querySelector('.draft-esquema').value.trim(),
-        porcentaje: parseFloat(el.querySelector('.draft-pct').value) || 0,
-        notas: el.querySelector('.draft-notas').value.trim()
-      })).filter(b => b.ejercicio || b.esquema);
+      weeklyDrafts[activeCoachDay] = readCurrentDayDraftFromDom();
 
-      if (bloques.length === 0) {
-        showToast('Agrega al menos un bloque válido antes de publicar.', 'error');
+      const startIso = (coachWodDate && coachWodDate.value) || getMondayOfDate(todayStr);
+      const diasPayload = weeklyDrafts.map((bloques, idx) => ({
+        dayIndex: idx,
+        fecha: addDaysToIso(startIso, idx),
+        bloques: bloques
+      })).filter(d => d.bloques.length > 0);
+
+      if (diasPayload.length === 0) {
+        showToast('Agrega al menos un bloque en alguno de los 6 días antes de publicar.', 'error');
         return;
       }
 
       btnPublishCoachWod.disabled = true;
-      btnPublishCoachWod.textContent = 'Publicando...';
+      btnPublishCoachWod.textContent = 'Publicando semana...';
       try {
         const resp = await fetch(currentScriptUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
-            type: 'publishDailyWod',
+            type: 'publishWeeklyWod',
             rol: activePwaSession.rol,
             atleta: activePwaSession.atleta,
-            fecha: (coachWodDate && coachWodDate.value) || todayStr,
-            programa: (coachWodProgram && coachWodProgram.value.trim()) || 'Atenea',
+            fechaInicio: startIso,
+            programa: (coachWodProgram && coachWodProgram.value) || 'Atenea',
             ciclo: localStorage.getItem('kleos_active_cycle') || 'Atenea',
             semana: parseInt(localStorage.getItem('kleos_current_week'), 10) || 2,
-            bloques: bloques
+            dias: diasPayload
           })
         });
         const res = await resp.json();
         if (res && res.status === 'ok') {
-          showToast(`🚀 WOD publicado (${bloques.length} bloques) en Programacion_Diaria`, 'success');
+          showToast(`🚀 ${res.message}`, 'success');
           if (coachWodModal) coachWodModal.close();
-          if (hoyDatePicker && coachWodDate) hoyDatePicker.value = coachWodDate.value;
           loadDailyWod();
         } else {
-          showToast((res && res.message) || 'Error publicando programación.', 'error');
+          showToast((res && res.message) || 'Error publicando semana.', 'error');
         }
       } catch (_) {
-        showToast('Error de red al publicar WOD.', 'error');
+        showToast('Error de red al publicar programación semanal.', 'error');
       } finally {
         btnPublishCoachWod.disabled = false;
-        btnPublishCoachWod.textContent = '🚀 Publicar WOD';
+        btnPublishCoachWod.textContent = '🚀 Publicar Semana Completa (Batch)';
       }
     });
   }

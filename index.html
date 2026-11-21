@@ -39,7 +39,7 @@
   <!-- Canvas Confetti para Celebración Épica de Récords Personales (PR) -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
 
-  <link rel="stylesheet" href="css/styles.css?v=3.0">
+  <link rel="stylesheet" href="css/styles.css?v=3.1">
 </head>
 <body>
   <!-- Fondo cinemático del Partenón con velo oscuro -->
@@ -218,11 +218,15 @@
         <div class="glass-card pwa-hoy-card">
           <div class="hoy-header">
             <div>
-              <div class="dashboard-tag">⚡ PROGRAMACIÓN DIARIA &bull; CICLO ATENEA</div>
+              <div class="dashboard-tag" id="hoyProgramTag">⚡ PROGRAMACIÓN DIARIA &bull; CICLO ATENEA</div>
               <h2 class="hoy-title">Entrenamiento de Hoy</h2>
               <p class="hoy-subtitle" id="hoyDateSubtitle">Cargando bloques y pesos calculados desde tu 1RM...</p>
             </div>
             <div class="hoy-date-controls">
+              <select id="hoyProgramPreviewSelect" class="hoy-date-input" style="display: none;" aria-label="Vista previa de programa (Coach)">
+                <option value="Atenea">⚡ Atenea (General)</option>
+                <option value="Atenea_Comp5">🏆 Atenea_Comp5 (5 Dic)</option>
+              </select>
               <input type="date" id="hoyDatePicker" class="hoy-date-input" aria-label="Seleccionar fecha del WOD">
               <button type="button" id="btnOpenTimerFromHoy" class="btn-open-timer">⏱️ Abrir Reloj WOD</button>
             </div>
@@ -1251,44 +1255,81 @@
     }
   </style>
 
-  <!-- MODAL COACH: PUBLICAR WOD DIARIO + PARSER RÁPIDO WHATSAPP (NATIVO <dialog>) -->
+  <!-- MODAL COACH: PUBLICACIÓN SEMANAL (6 DÍAS) + CLONADO + PROGRAMAS DE ATLETAS -->
   <dialog id="coachWodModal" class="coach-wod-dialog" closedby="any" aria-labelledby="coachWodTitle">
     <div class="coach-modal-content">
       <div class="coach-modal-header">
         <div>
-          <span class="dashboard-tag">🏛️ MODO COACH &bull; PROGRAMACION_DIARIA</span>
-          <h2 id="coachWodTitle">Publicar WOD del Día</h2>
+          <span class="dashboard-tag">🏛️ MODO COACH &bull; PROGRAMACIÓN SEMANAL &amp; SUB-PROGRAMAS</span>
+          <h2 id="coachWodTitle">Gestión de Programación Kleos</h2>
         </div>
         <button type="button" id="btnCloseCoachWod" class="coach-close-btn" aria-label="Cerrar modal">&times;</button>
       </div>
 
-      <div class="coach-meta-grid">
-        <div class="form-group">
-          <label for="coachWodDate">Fecha</label>
-          <input type="date" id="coachWodDate" required>
+      <!-- Pestañas internas del Modal Coach -->
+      <div class="coach-modal-tabs" role="tablist">
+        <button type="button" id="coachTabWeekly" class="coach-tab-btn active" role="tab" aria-selected="true">📅 Semana Completa (6 Días)</button>
+        <button type="button" id="coachTabAthletes" class="coach-tab-btn" role="tab" aria-selected="false">👥 Programas de Atletas</button>
+      </div>
+
+      <!-- PANEL A: PUBLICACIÓN SEMANAL (LUNES A SÁBADO EN BATCH) -->
+      <div id="coachWeeklyPane" class="coach-pane active">
+        <div class="coach-meta-grid">
+          <div class="form-group">
+            <label for="coachWodDate">Fecha Inicial (Lunes)</label>
+            <input type="date" id="coachWodDate" required>
+          </div>
+          <div class="form-group">
+            <label for="coachWodProgram">Programa Destino</label>
+            <select id="coachWodProgram">
+              <option value="Atenea">⚡ Atenea (General)</option>
+              <option value="Atenea_Comp5">🏆 Atenea_Comp5 (Competencia 5 Dic)</option>
+            </select>
+          </div>
         </div>
-        <div class="form-group">
-          <label for="coachWodProgram">Programa / Ciclo</label>
-          <input type="text" id="coachWodProgram" value="Atenea" required>
+
+        <div class="coach-clone-bar">
+          <button type="button" id="btnCloneAteneaToComp5" class="btn-clone-week">
+            📋 Clonar semana de Atenea &rarr; Atenea_Comp5
+          </button>
+          <span id="coachWeekSummaryTag" class="coach-week-summary">0 bloques en borrador</span>
+        </div>
+
+        <!-- Selector de los 6 días de la semana (Lun-Sáb) -->
+        <div id="coachWeekDayTabs" class="coach-weekday-strip" role="tablist">
+          <button type="button" class="weekday-pill active" data-day="0">Lun <span class="wd-cnt">0</span></button>
+          <button type="button" class="weekday-pill" data-day="1">Mar <span class="wd-cnt">0</span></button>
+          <button type="button" class="weekday-pill" data-day="2">Mié <span class="wd-cnt">0</span></button>
+          <button type="button" class="weekday-pill" data-day="3">Jue <span class="wd-cnt">0</span></button>
+          <button type="button" class="weekday-pill" data-day="4">Vie <span class="wd-cnt">0</span></button>
+          <button type="button" class="weekday-pill" data-day="5">Sáb <span class="wd-cnt">0</span></button>
+        </div>
+
+        <!-- PARSER RÁPIDO DESDE WHATSAPP PARA EL DÍA ACTIVO -->
+        <div class="whatsapp-parser-box">
+          <label for="whatsappWodInput" id="lblWhatsappDay">📋 Pegar WOD desde WhatsApp · Día seleccionado (Auto-Parser A), B), C) y @ %1RM)</label>
+          <textarea id="whatsappWodInput" rows="3" placeholder="Ej:&#10;A) Back Squat 5x5 @ 75% - Tempo controlado&#10;B) Pull Ups 4x8 - Progresión estricta o kipping&#10;C) Metcon AMRAP 12': 10 Thrusters + 10 T2B + 200m Run"></textarea>
+          <div class="whatsapp-parser-actions">
+            <button type="button" id="btnParseWhatsappWod" class="btn-secondary">⚡ Parsear al Día Actual</button>
+            <button type="button" id="btnAddManualBlock" class="btn-secondary">+ Agregar Bloque Manual</button>
+          </div>
+        </div>
+
+        <!-- BORRADOR EDITABLE DE BLOQUES DEL DÍA ACTIVO -->
+        <div id="coachDraftBlocks" class="coach-draft-blocks"></div>
+
+        <div class="coach-modal-footer">
+          <button type="button" id="btnCancelCoachWod" class="btn-secondary">Cancelar</button>
+          <button type="button" id="btnPublishCoachWod" class="btn-primary">🚀 Publicar Semana Completa (Batch)</button>
         </div>
       </div>
 
-      <!-- PARSER RÁPIDO DESDE WHATSAPP -->
-      <div class="whatsapp-parser-box">
-        <label for="whatsappWodInput">📋 Pegar WOD desde WhatsApp (Auto-Parser A), B), C) y @ %1RM)</label>
-        <textarea id="whatsappWodInput" rows="4" placeholder="Ej:&#10;A) Back Squat 5x5 @ 75% - Tempo controlado&#10;B) Pull Ups 4x8 - Progresión estricta o kipping&#10;C) Metcon AMRAP 12': 10 Thrusters + 10 T2B + 200m Run"></textarea>
-        <div class="whatsapp-parser-actions">
-          <button type="button" id="btnParseWhatsappWod" class="btn-secondary">⚡ Parsear a Bloques Editables</button>
-          <button type="button" id="btnAddManualBlock" class="btn-secondary">+ Agregar Bloque Manual</button>
+      <!-- PANEL B: ASIGNACIÓN RÁPIDA DE PROGRAMAS DE ATLETAS -->
+      <div id="coachAthletesPane" class="coach-pane" style="display: none;">
+        <p class="hoy-subtitle" style="margin-bottom: 0.75rem;">Cambia el programa asignado de cualquier atleta en vivo (sincronizado con <code>Usuarios_Kleos</code>).</p>
+        <div id="coachAthletesProgramList" class="coach-athletes-list">
+          <div class="hoy-loading-msg">Cargando listado de atletas y programas...</div>
         </div>
-      </div>
-
-      <!-- BORRADOR EDITABLE DE BLOQUES -->
-      <div id="coachDraftBlocks" class="coach-draft-blocks"></div>
-
-      <div class="coach-modal-footer">
-        <button type="button" id="btnCancelCoachWod" class="btn-secondary">Cancelar</button>
-        <button type="button" id="btnPublishCoachWod" class="btn-primary">🚀 Publicar WOD</button>
       </div>
     </div>
   </dialog>
@@ -1316,6 +1357,6 @@
   <!-- TOAST NOTIFICATIONS -->
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="js/app.js?v=3.0"></script>
+  <script src="js/app.js?v=3.1"></script>
 </body>
 </html>

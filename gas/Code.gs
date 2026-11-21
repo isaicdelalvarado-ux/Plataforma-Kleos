@@ -730,6 +730,22 @@ function doGet(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
+    if (e && e.parameter && e.parameter.action === "getUsersPrograms") {
+      var upRes = getUsersProgramsList(ss);
+      return ContentService.createTextOutput(JSON.stringify(upRes))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (e && e.parameter && e.parameter.action === "getWeeklyWod") {
+      var wkRes = getWeeklyWodData(
+        ss,
+        e.parameter.fechaInicio || e.parameter.fecha || "",
+        e.parameter.programa || "Atenea"
+      );
+      return ContentService.createTextOutput(JSON.stringify(wkRes))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     // Soporte para consulta y control de macrociclos
     if (e && e.parameter && (e.parameter.action === "getCycle" || e.parameter.action === "ciclo")) {
       return ContentService.createTextOutput(JSON.stringify({
@@ -1390,6 +1406,16 @@ function doPost(e) {
     else if (data.type === "publishDailyWod" || data.type === "publish_daily_wod" || data.action === "publishDailyWod") {
       var pubRes = publishDailyWodBlocks(ss, data);
       return ContentService.createTextOutput(JSON.stringify(pubRes))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    else if (data.type === "publishWeeklyWod" || data.type === "publish_weekly_wod" || data.action === "publishWeeklyWod") {
+      var wkPubRes = publishWeeklyWodBatch(ss, data);
+      return ContentService.createTextOutput(JSON.stringify(wkPubRes))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    else if (data.type === "updateAthleteProgram" || data.type === "update_athlete_program" || data.action === "updateAthleteProgram") {
+      var progUpdRes = updateKleosAthleteProgram(ss, data);
+      return ContentService.createTextOutput(JSON.stringify(progUpdRes))
         .setMimeType(ContentService.MimeType.JSON);
     }
     else if (data.type === "crear_informe_drive" || data.type === "informe_drive") {
@@ -3479,14 +3505,36 @@ function roundToNearestPlate(kg) {
 }
 
 /**
- * Devuelve los bloques del WOD del día desde 'Programacion_Diaria' con pesos calculados
- * en kg desde 'RM_Atenea' para el atleta solicitado.
+ * Obtiene el Programa_Asignado de un atleta desde 'Usuarios_Kleos'.
+ */
+function getAthleteAssignedProgram(ss, athleteName) {
+  var norm = String(athleteName || "").trim().toLowerCase();
+  if (!norm) return getActiveCycle(ss) || "Atenea";
+  var sheet = ss.getSheetByName(TABS.USUARIOS_KLEOS);
+  if (!sheet || sheet.getLastRow() < 2) return getActiveCycle(ss) || "Atenea";
+  var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).getValues();
+  for (var i = 0; i < values.length; i++) {
+    var rName = String(values[i][1] || "").trim().toLowerCase();
+    var rUser = String(values[i][2] || "").trim().toLowerCase();
+    if (rName === norm || rUser === norm) {
+      var prog = String(values[i][5] || "").trim();
+      return prog || getActiveCycle(ss) || "Atenea";
+    }
+  }
+  return getActiveCycle(ss) || "Atenea";
+}
+
+/**
+ * Devuelve los bloques del WOD del día desde 'Programacion_Diaria' filtrados
+ * estrictamente por el Programa_Asignado del atleta ('Atenea_Comp5' o 'Atenea')
+ * con pesos calculados en kg desde 'RM_Atenea'.
  */
 function getDailyWodData(ss, fechaParam, athleteParam, programParam) {
   var sheet = ss.getSheetByName(TABS.PROGRAMACION_DIARIA);
   var requestedDate = normalizeDateToISO(fechaParam) || formatDateISO(new Date());
-  var targetProg = String(programParam || getActiveCycle(ss) || "Atenea").trim();
   var athleteName = String(athleteParam || "").trim();
+  var targetProg = String(programParam || "").trim() || getAthleteAssignedProgram(ss, athleteName);
+  var targetProgLower = targetProg.toLowerCase();
 
   if (!sheet || sheet.getLastRow() < 2) {
     return {
@@ -3516,16 +3564,19 @@ function getDailyWodData(ss, fechaParam, athleteParam, programParam) {
     }
   }
 
-  var allValidRows = [];
+  var programRows = [];
   for (var i = 0; i < values.length; i++) {
     var row = values[i];
     var fIso = normalizeDateToISO(row[0]);
     if (!fIso) continue;
-    allValidRows.push({
+    var rowProg = String(row[3] || "Atenea").trim();
+    if (rowProg.toLowerCase() !== targetProgLower) continue;
+
+    programRows.push({
       fecha: fIso,
       ciclo: String(row[1] || "Atenea").trim(),
       semana: parseInt(row[2], 10) || getCurrentWeek(ss),
-      programa: String(row[3] || "Atenea").trim(),
+      programa: rowProg,
       bloque: String(row[4] || "").trim(),
       orden: parseInt(row[5], 10) || (i + 1),
       ejercicio: String(row[6] || "").trim(),
@@ -3535,19 +3586,19 @@ function getDailyWodData(ss, fechaParam, athleteParam, programParam) {
     });
   }
 
-  var matched = allValidRows.filter(function(r) {
+  var matched = programRows.filter(function(r) {
     return r.fecha === requestedDate;
   });
 
   var shownDate = requestedDate;
   var isFallback = false;
 
-  if (matched.length === 0 && allValidRows.length > 0) {
-    // Buscar la fecha más reciente programada
-    var datesSorted = allValidRows.map(function(r) { return r.fecha; }).sort();
+  if (matched.length === 0 && programRows.length > 0) {
+    // Buscar la fecha más reciente programada dentro de SU programa
+    var datesSorted = programRows.map(function(r) { return r.fecha; }).sort();
     shownDate = datesSorted[datesSorted.length - 1];
     isFallback = true;
-    matched = allValidRows.filter(function(r) { return r.fecha === shownDate; });
+    matched = programRows.filter(function(r) { return r.fecha === shownDate; });
   }
 
   matched.sort(function(a, b) { return a.orden - b.orden; });
@@ -3769,6 +3820,219 @@ function publishDailyWodBlocks(ss, data) {
 
   logScriptEvent(ss, "PUBLISH_DAILY_WOD", data.atleta || "Coach", startRow, "HEALTHY", "Fecha: " + fecha + " | Bloques: " + rowsToWrite.length);
   return { status: "ok", message: "Programación publicada exitosamente (" + rowsToWrite.length + " bloques).", insertedCount: rowsToWrite.length, fecha: fecha };
+}
+
+/**
+ * Devuelve la lista de usuarios y sus programas asignados desde 'Usuarios_Kleos' (para Panel Coach).
+ */
+function getUsersProgramsList(ss) {
+  var sheet = ss.getSheetByName(TABS.USUARIOS_KLEOS);
+  if (!sheet || sheet.getLastRow() < 2) {
+    return { status: "ok", users: [] };
+  }
+  var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).getValues();
+  var users = [];
+  for (var i = 0; i < values.length; i++) {
+    var r = values[i];
+    var nombre = String(r[1] || "").trim();
+    if (!nombre) continue;
+    users.push({
+      idAtleta: String(r[0] || "").trim(),
+      atleta: nombre,
+      usuario: String(r[2] || "").trim(),
+      rol: String(r[4] || "Atleta").trim(),
+      programa: String(r[5] || "Atenea").trim(),
+      estado: String(r[6] || "Activo").trim()
+    });
+  }
+  return { status: "ok", users: users };
+}
+
+/**
+ * Actualiza el Programa_Asignado de un atleta en 'Usuarios_Kleos' (exclusivo rol Coach).
+ */
+function updateKleosAthleteProgram(ss, data) {
+  var rol = String(data.rol || "").trim().toLowerCase();
+  if (rol !== "coach") {
+    return { status: "error", message: "Acceso denegado: solo el Coach puede cambiar programas." };
+  }
+  var targetAth = String(data.targetAtleta || data.atletaDestino || data.atleta || "").trim();
+  var newProg = String(data.programa || "Atenea").trim();
+  if (!targetAth || !newProg) {
+    return { status: "error", message: "Faltan datos de atleta o programa destino." };
+  }
+  var sheet = ss.getSheetByName(TABS.USUARIOS_KLEOS);
+  if (!sheet || sheet.getLastRow() < 2) {
+    return { status: "error", message: "No existe la pestaña 'Usuarios_Kleos'." };
+  }
+  var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).getValues();
+  for (var i = 0; i < values.length; i++) {
+    var nombre = String(values[i][1] || "").trim();
+    if (nombre.toLowerCase() === targetAth.toLowerCase()) {
+      var targetRow = i + 2;
+      sheet.getRange(targetRow, 6).setValue(newProg);
+      SpreadsheetApp.flush();
+      logScriptEvent(ss, "UPDATE_ATHLETE_PROGRAM", nombre, targetRow, "HEALTHY", "Nuevo programa: " + newProg);
+      return { status: "ok", message: "Programa de " + nombre + " actualizado a " + newProg, atleta: nombre, programa: newProg };
+    }
+  }
+  return { status: "error", message: "Atleta no encontrado en 'Usuarios_Kleos': " + targetAth };
+}
+
+/**
+ * Suma N días a una fecha ISO YYYY-MM-DD y retorna YYYY-MM-DD.
+ */
+function addDaysISO(isoDate, daysToAdd) {
+  var parts = String(isoDate || "").split("-");
+  if (parts.length !== 3) return isoDate;
+  var d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10) + daysToAdd);
+  return formatDateISO(d);
+}
+
+/**
+ * Lee una semana completa (6 días: Lunes a Sábado) de un programa desde 'Programacion_Diaria'
+ * para permitir clonar Atenea -> Atenea_Comp5 o editar la semana en el modal del Coach.
+ */
+function getWeeklyWodData(ss, fechaInicioParam, programaParam) {
+  var startIso = normalizeDateToISO(fechaInicioParam) || formatDateISO(new Date());
+  var targetProg = String(programaParam || "Atenea").trim();
+  var targetProgLower = targetProg.toLowerCase();
+
+  var dayDates = [];
+  var diasMap = {};
+  for (var d = 0; d < 6; d++) {
+    var iso = addDaysISO(startIso, d);
+    dayDates.push(iso);
+    diasMap[iso] = [];
+  }
+
+  var sheet = ss.getSheetByName(TABS.PROGRAMACION_DIARIA);
+  if (sheet && sheet.getLastRow() >= 2) {
+    var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 10).getValues();
+    for (var i = 0; i < values.length; i++) {
+      var row = values[i];
+      var fIso = normalizeDateToISO(row[0]);
+      var rProg = String(row[3] || "Atenea").trim().toLowerCase();
+      if (rProg === targetProgLower && diasMap.hasOwnProperty(fIso)) {
+        diasMap[fIso].push({
+          bloque: String(row[4] || "").trim(),
+          orden: parseInt(row[5], 10) || (diasMap[fIso].length + 1),
+          ejercicio: String(row[6] || "").trim(),
+          esquema: String(row[7] || "").trim(),
+          porcentaje: parseFloat(String(row[8] || "0").replace("%", "").replace(",", ".")) || 0,
+          notas: String(row[9] || "").trim()
+        });
+      }
+    }
+  }
+
+  var dias = [];
+  for (var k = 0; k < dayDates.length; k++) {
+    var f = dayDates[k];
+    diasMap[f].sort(function(a, b) { return a.orden - b.orden; });
+    dias.push({
+      dayIndex: k,
+      fecha: f,
+      bloques: diasMap[f]
+    });
+  }
+
+  return {
+    status: "ok",
+    fechaInicio: startIso,
+    programa: targetProg,
+    dias: dias
+  };
+}
+
+/**
+ * Publica una semana completa (hasta 6 días: Lunes a Sábado) en 'Programacion_Diaria'
+ * en UNA SOLA operación batch (setValues), preservando la fila vacía final para Looker Studio.
+ */
+function publishWeeklyWodBatch(ss, data) {
+  var rol = String(data.rol || "").trim().toLowerCase();
+  if (rol !== "coach") {
+    return { status: "error", message: "Acceso denegado: solo el rol Coach puede publicar programación semanal." };
+  }
+
+  var dias = data.dias;
+  if (!dias || !Array.isArray(dias) || dias.length === 0) {
+    return { status: "error", message: "No se recibieron días con bloques para publicar." };
+  }
+
+  var sheet = ss.getSheetByName(TABS.PROGRAMACION_DIARIA);
+  if (!sheet) {
+    sheet = ss.insertSheet(TABS.PROGRAMACION_DIARIA);
+    sheet.getRange(1, 1, 1, 10).setValues([[
+      "Fecha", "Ciclo", "Semana", "Programa", "Bloque", "Orden",
+      "Ejercicio", "Esquema_Sets_Reps", "Porcentaje_1RM", "Notas_Coach"
+    ]]);
+    sheet.setFrozenRows(1);
+  }
+
+  var ciclo = String(data.ciclo || getActiveCycle(ss) || "Atenea").trim();
+  var semana = parseInt(data.semana, 10) || getCurrentWeek(ss);
+  var programa = String(data.programa || ciclo).trim();
+  var fechaInicio = normalizeDateToISO(data.fechaInicio) || formatDateISO(new Date());
+
+  var rowsToWrite = [];
+  var activeDaysCount = 0;
+
+  for (var d = 0; d < dias.length; d++) {
+    var dayObj = dias[d];
+    var dayFecha = normalizeDateToISO(dayObj.fecha) || addDaysISO(fechaInicio, d);
+    var bloques = Array.isArray(dayObj.bloques) ? dayObj.bloques : [];
+    if (bloques.length === 0) continue;
+    activeDaysCount++;
+
+    for (var i = 0; i < bloques.length; i++) {
+      var b = bloques[i];
+      rowsToWrite.push([
+        dayFecha,
+        ciclo,
+        semana,
+        programa,
+        String(b.bloque || ("Bloque " + (i + 1))).trim(),
+        parseInt(b.orden, 10) || (i + 1),
+        String(b.ejercicio || "").trim(),
+        String(b.esquema || "").trim(),
+        parseFloat(String(b.porcentaje || "0").replace("%", "").replace(",", ".")) || 0,
+        String(b.notas || "").trim()
+      ]);
+    }
+  }
+
+  if (rowsToWrite.length === 0) {
+    return { status: "error", message: "Agrega al menos un bloque en alguno de los 6 días." };
+  }
+
+  var startRow = getFirstEmptyRowByColumnA(sheet);
+  var endRow = startRow + rowsToWrite.length - 1;
+  if (endRow >= sheet.getMaxRows()) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), rowsToWrite.length + 5);
+  }
+
+  // Escritura atómica en UNA SOLA operación batch
+  sheet.getRange(startRow, 1, rowsToWrite.length, 10).setValues(rowsToWrite);
+  SpreadsheetApp.flush();
+  ensureSingleCleanBottomRow(sheet, endRow);
+
+  logScriptEvent(
+    ss,
+    "PUBLISH_WEEKLY_WOD",
+    data.atleta || "Coach",
+    startRow,
+    "HEALTHY",
+    "Programa: " + programa + " | Inicio: " + fechaInicio + " | Días: " + activeDaysCount + " | Bloques: " + rowsToWrite.length
+  );
+
+  return {
+    status: "ok",
+    message: "Semana publicada en bloque (" + activeDaysCount + " días, " + rowsToWrite.length + " bloques) para " + programa + ".",
+    insertedCount: rowsToWrite.length,
+    daysCount: activeDaysCount,
+    programa: programa
+  };
 }
 
 
