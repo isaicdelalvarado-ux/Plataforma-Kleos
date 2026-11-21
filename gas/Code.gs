@@ -3641,6 +3641,35 @@ function getDailyWodData(ss, fechaParam, athleteParam, programParam) {
 }
 
 /**
+ * Formatea una celda de duración de Sheets (que puede venir como Date 1899-12-30/31)
+ * a formato limpio MM:SS o HH:mm:ss sin exponer cadenas GMT.
+ */
+function formatDurationClean(val) {
+  if (val === undefined || val === null || val === "") return "";
+  if (val instanceof Date) {
+    var hhmmss = Utilities.formatDate(val, "America/Caracas", "HH:mm:ss");
+    var parts = hhmmss.split(":");
+    if (parts.length === 3) {
+      if (parts[0] === "00") return parts[1] + ":" + parts[2];
+      if (parts[2] === "00") return parts[0] + ":" + parts[1];
+      return hhmmss;
+    }
+    return hhmmss;
+  }
+  var s = String(val).trim();
+  if (!s || s === "0") return "";
+  if (s.indexOf("GMT") !== -1 || s.indexOf("1899") !== -1) {
+    var m = s.match(/(\d{2}):(\d{2}):(\d{2})/);
+    if (m) {
+      if (m[1] === "00") return m[2] + ":" + m[3];
+      if (m[3] === "00") return m[1] + ":" + m[2];
+      return m[2] + ":" + m[3];
+    }
+  }
+  return s;
+}
+
+/**
  * Devuelve el Tablero del Día (Leaderboard) desde 'Registro_Diario' agrupado en Rx y Scaled.
  * NUNCA expone datos de Wellness, fatiga ni molestias médicas.
  */
@@ -3667,7 +3696,7 @@ function getDailyLeaderboardData(ss, fechaParam) {
     var ej = String(row[4] || "").trim();
     var cat = String(row[5] || "").trim();
     var carga = parseFloat(String(row[8] || "0").replace(",", ".")) || 0;
-    var duracion = String(row[22] || "").trim();
+    var duracion = formatDurationClean(row[22]);
     var score = parseFloat(String(row[23] || "0").replace(",", ".")) || 0;
     var repsTot = parseFloat(String(row[11] || "0").replace(",", ".")) || 0;
     parsedRows.push({

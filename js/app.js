@@ -718,6 +718,10 @@ document.addEventListener('DOMContentLoaded', () => {
   athleteSelect.addEventListener('change', (e) => {
     localStorage.setItem(STORAGE_KEYS.ATHLETE, e.target.value);
     updateExerciseRmState();
+    // Sincronizar Tab 'Hoy' para el Coach al cambiar atleta
+    if (typeof loadDailyWod === 'function') {
+      loadDailyWod();
+    }
     // Sincronizar con el dashboard si el usuario lo tiene en perfil individual
     const dashSelect = document.getElementById('dashboardAthleteSelect');
     if (dashSelect && dashSelect.value !== 'todos') {
@@ -3020,7 +3024,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const bloques = (data && Array.isArray(data.bloques)) ? data.bloques : [];
       if (bloques.length === 0) {
-        hoyWodBlocksContainer.innerHTML = '<div class="hoy-loading-msg">Aún no hay programación publicada para esta fecha.</div>';
+        const coachBtnHtml = isCoach
+          ? `<button type="button" id="btnQuickPublishEmptyHoy" class="btn-coach-publish" style="margin-top:0.75rem;">+ Publicar WOD para esta fecha</button>`
+          : '';
+        hoyWodBlocksContainer.innerHTML = `
+          <div class="hoy-loading-msg">
+            <div>Aún no hay programación publicada para esta fecha.</div>
+            ${coachBtnHtml}
+          </div>
+        `;
+        const quickBtn = document.getElementById('btnQuickPublishEmptyHoy');
+        if (quickBtn && btnOpenCoachWod) {
+          quickBtn.addEventListener('click', () => btnOpenCoachWod.click());
+        }
         return;
       }
 
@@ -3052,6 +3068,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function sanitizeDurationDisplay(rawVal) {
+    const s = String(rawVal || '').trim();
+    if (!s) return '';
+    if (s.indexOf('GMT') !== -1 || s.indexOf('1899') !== -1 || s.indexOf('Dec 31') !== -1) {
+      const m = s.match(/(\d{2}):(\d{2}):(\d{2})/);
+      if (m) {
+        const cleanTime = (m[1] === '00') ? `${m[2]}:${m[3]}` : (m[3] === '00' ? `${m[1]}:${m[2]}` : `${m[2]}:${m[3]}`);
+        return s.replace(/[A-Za-z]{3}\s+[A-Za-z]{3}\s+\d{1,2}\s+1899\s+\d{2}:\d{2}:\d{2}\s+GMT[^\s·]*(?:\s*\([^)]*\))?/, cleanTime).trim();
+      }
+    }
+    return s;
+  }
+
   function renderLeaderboardList() {
     if (!leaderboardListContainer) return;
     const list = cachedLeaderboardData[activeLeaderboardLevel] || [];
@@ -3062,6 +3091,7 @@ document.addEventListener('DOMContentLoaded', () => {
     leaderboardListContainer.innerHTML = '';
     list.forEach((item, i) => {
       const medal = i === 0 ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : `#${i + 1}`));
+      const cleanScore = sanitizeDurationDisplay(item.resultado);
       const row = document.createElement('div');
       row.className = 'lb-row';
       row.innerHTML = `
@@ -3072,7 +3102,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="lb-ej">${item.ejercicio}</div>
           </div>
         </div>
-        <div class="lb-score">${item.resultado}</div>
+        <div class="lb-score">${cleanScore}</div>
       `;
       leaderboardListContainer.appendChild(row);
     });

@@ -3648,3 +3648,73 @@ dialog.coach-wod-dialog::backdrop {
   padding: 0.4rem 0.6rem;
   font-size: 0.8rem;
 }
+
+/* ==========================================================================
+   FIX RESPONSIVE MÓVIL (iOS / ANDROID): CERO OVERFLOW HORIZONTAL EN TAB HOY
+   ========================================================================== */
+html,
+body {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+.app-container,
+.panels-container,
+.tab-panel,
+.pwa-hoy-card,
+.pwa-leaderboard-card,
+.hoy-blocks-list,
+.hoy-block-card,
+.leaderboard-list {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.hoy-block-ex,
+.hoy-block-scheme,
+.hoy-block-notes {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.lb-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.lb-left {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.lb-left > div {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.lb-ath,
+.lb-ej {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lb-score {
+  flex-shrink: 0;
+  white-space: nowrap;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
