@@ -54,6 +54,8 @@ var TABS = {
   HISTORIAL_RMS: "Historial_RMs",
   CONTROL_CICLO: "Control_Ciclo",
   SKILLS_GIMNASIA: "Skills_Gimnasia", // Pestaña de Skills y Progresiones de Gimnasia
+  USUARIOS_KLEOS: "Usuarios_Kleos",   // Usuarios, PINs y Roles (Atleta / Coach)
+  PROGRAMACION_DIARIA: "Programacion_Diaria", // WODs y bloques diarios programados
   LOG_SCRIPT: "Log_Script"
 };
 
@@ -702,6 +704,32 @@ function doGet(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
+    // =========================================================================
+    // ENDPOINTS PWA MÓVIL: LOGIN, WOD DEL DÍA Y LEADERBOARD DIARIO
+    // =========================================================================
+    if (e && e.parameter && e.parameter.action === "login") {
+      var loginRes = authenticateKleosUser(ss, e.parameter.usuario || e.parameter.user || "", e.parameter.pin || "");
+      return ContentService.createTextOutput(JSON.stringify(loginRes))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (e && e.parameter && (e.parameter.action === "getDailyWod" || e.parameter.action === "dailyWod")) {
+      var wodRes = getDailyWodData(
+        ss,
+        e.parameter.fecha || e.parameter.date || "",
+        e.parameter.atleta || e.parameter.athlete || "",
+        e.parameter.programa || e.parameter.program || ""
+      );
+      return ContentService.createTextOutput(JSON.stringify(wodRes))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (e && e.parameter && (e.parameter.action === "getDailyLeaderboard" || e.parameter.action === "leaderboard")) {
+      var lbRes = getDailyLeaderboardData(ss, e.parameter.fecha || e.parameter.date || "");
+      return ContentService.createTextOutput(JSON.stringify(lbRes))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     // Soporte para consulta y control de macrociclos
     if (e && e.parameter && (e.parameter.action === "getCycle" || e.parameter.action === "ciclo")) {
       return ContentService.createTextOutput(JSON.stringify({
@@ -835,6 +863,7 @@ function getAthleteDashboardData(ss, athleteParam, cycleParam) {
   };
   var ejerciciosMap = {};
   var intensidadesList = [];
+  var activityDatesMap = {};
 
   var regSheet = ss.getSheetByName(TABS.REGISTRO_DIARIO);
   if (regSheet) {
@@ -857,6 +886,15 @@ function getAthleteDashboardData(ss, athleteParam, cycleParam) {
         }
 
         totalWorkouts++;
+        var rawRegDate = row[1];
+        if (rawRegDate instanceof Date) {
+          activityDatesMap[formatDateISO(rawRegDate)] = true;
+        } else if (rawRegDate) {
+          var parsedRegD = parseDate(String(rawRegDate).trim());
+          if (parsedRegD && !isNaN(parsedRegD.getTime())) {
+            activityDatesMap[formatDateISO(parsedRegD)] = true;
+          }
+        }
         var ej = (row[4] || "").toString().trim();
         var cat = (row[5] || "").toString().trim();
         var series = parseFloat(String(row[6]).replace(',', '.')) || 0;
@@ -1197,6 +1235,7 @@ function getAthleteDashboardData(ss, athleteParam, cycleParam) {
     rms: athleteRms,
     rmDeltas: rmDeltas,
     gymnastics: gymnasticsSummary,
+    activityDates: Object.keys(activityDatesMap).sort(),
     intensidadPromedio: Math.round(avgIntensidad * 10) / 10,
     timestamp: new Date().toISOString()
   };
@@ -1332,6 +1371,27 @@ function doPost(e) {
         row: gRes.row
       });
     } 
+    else if (data.type === "login" || data.action === "login") {
+      var authRes = authenticateKleosUser(ss, data.usuario || data.user || "", data.pin || "");
+      return ContentService.createTextOutput(JSON.stringify(authRes))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    else if (data.type === "updatePin" || data.type === "update_pin" || data.action === "updatePin") {
+      var pinRes = updateKleosUserPin(
+        ss,
+        data.usuario || data.user || "",
+        data.atleta || data.athlete || "",
+        data.pinActual || data.currentPin || "",
+        data.pinNuevo || data.newPin || ""
+      );
+      return ContentService.createTextOutput(JSON.stringify(pinRes))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    else if (data.type === "publishDailyWod" || data.type === "publish_daily_wod" || data.action === "publishDailyWod") {
+      var pubRes = publishDailyWodBlocks(ss, data);
+      return ContentService.createTextOutput(JSON.stringify(pubRes))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
     else if (data.type === "crear_informe_drive" || data.type === "informe_drive") {
       var driveRes = crearInformeSemanalEnDrive(ss);
       return sendJsonResponse(driveRes.status, driveRes.message);
@@ -3280,4 +3340,435 @@ function registrarNuevoRMDobleFlujo(ss, data, activeCycle) {
     matrizUpdate: matrixRes
   };
 }
+
+// ============================================================================
+// MÓDULO PWA MÓVIL: AUTENTICACIÓN, PIN, WOD DEL DÍA Y LEADERBOARD DIARIO (v52)
+// ============================================================================
+
+/**
+ * Autentica un usuario contra la pestaña 'Usuarios_Kleos' (case-insensitive en usuario).
+ * Columnas: [ID_Atleta, Nombre_Completo_Sheets, Usuario, PIN_Clave, Rol, Programa_Asignado, Estado]
+ */
+function authenticateKleosUser(ss, usuario, pin) {
+  var userInput = String(usuario || "").trim().toLowerCase();
+  var pinInput = String(pin || "").trim();
+
+  if (!userInput || !pinInput) {
+    return { status: "error", message: "Ingresa tu usuario y PIN de 4 dígitos." };
+  }
+
+  var sheet = ss.getSheetByName(TABS.USUARIOS_KLEOS);
+  if (!sheet) {
+    return { status: "error", message: "No se encontró la pestaña 'Usuarios_Kleos'." };
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return { status: "error", message: "No hay usuarios registrados en 'Usuarios_Kleos'." };
+  }
+
+  var values = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var idAtleta = String(row[0] || "").trim();
+    var nombreCompleto = String(row[1] || "").trim();
+    var rowUser = String(row[2] || "").trim().toLowerCase();
+    var rowPin = String(row[3] || "").trim();
+    var rol = String(row[4] || "Atleta").trim();
+    var programa = String(row[5] || "Atenea").trim();
+    var estado = String(row[6] || "Activo").trim().toLowerCase();
+
+    if (rowUser === userInput || nombreCompleto.toLowerCase() === userInput) {
+      if (estado !== "activo") {
+        return { status: "error", message: "Tu cuenta se encuentra inactiva. Consulta con el Coach." };
+      }
+      if (rowPin === pinInput) {
+        logScriptEvent(ss, "PWA_LOGIN_OK", nombreCompleto, i + 2, "HEALTHY", "Usuario: " + rowUser + " | Rol: " + rol);
+        return {
+          status: "ok",
+          idAtleta: idAtleta,
+          atleta: nombreCompleto,
+          usuario: rowUser,
+          rol: rol,
+          programa: programa,
+          activeCycle: getActiveCycle(ss),
+          currentWeek: getCurrentWeek(ss)
+        };
+      } else {
+        return { status: "error", message: "PIN incorrecto. Verifica tus 4 dígitos." };
+      }
+    }
+  }
+
+  return { status: "error", message: "Usuario no encontrado en Plataforma Kleos." };
+}
+
+/**
+ * Permite a un atleta o coach actualizar su propio PIN de 4 dígitos en 'Usuarios_Kleos'.
+ */
+function updateKleosUserPin(ss, usuario, atleta, pinActual, pinNuevo) {
+  var userInput = String(usuario || "").trim().toLowerCase();
+  var athInput = String(atleta || "").trim().toLowerCase();
+  var currPin = String(pinActual || "").trim();
+  var nextPin = String(pinNuevo || "").trim();
+
+  if (!/^\d{4}$/.test(nextPin)) {
+    return { status: "error", message: "El nuevo PIN debe tener exactamente 4 dígitos numéricos." };
+  }
+
+  var sheet = ss.getSheetByName(TABS.USUARIOS_KLEOS);
+  if (!sheet) {
+    return { status: "error", message: "No existe la pestaña 'Usuarios_Kleos'." };
+  }
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return { status: "error", message: "No hay usuarios registrados." };
+  }
+
+  var values = sheet.getRange(2, 1, lastRow - 1, 7).getValues();
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var nombre = String(row[1] || "").trim();
+    var rowUser = String(row[2] || "").trim().toLowerCase();
+    var rowPin = String(row[3] || "").trim();
+
+    if ((userInput && rowUser === userInput) || (athInput && nombre.toLowerCase() === athInput)) {
+      if (rowPin !== currPin) {
+        return { status: "error", message: "El PIN actual no coincide." };
+      }
+      var targetRow = i + 2;
+      var pinCell = sheet.getRange(targetRow, 4);
+      pinCell.setNumberFormat("@");
+      pinCell.setValue(nextPin);
+      SpreadsheetApp.flush();
+      logScriptEvent(ss, "PWA_UPDATE_PIN", nombre, targetRow, "HEALTHY", "PIN actualizado por el usuario");
+      return { status: "ok", message: "PIN actualizado correctamente." };
+    }
+  }
+
+  return { status: "error", message: "Usuario no localizado en 'Usuarios_Kleos'." };
+}
+
+/**
+ * Normaliza una celda de fecha a formato YYYY-MM-DD para comparaciones exactas.
+ */
+function normalizeDateToISO(val) {
+  if (!val) return "";
+  if (val instanceof Date) {
+    return formatDateISO(val);
+  }
+  var s = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    return s.substring(0, 10);
+  }
+  var parsed = parseDate(s);
+  if (parsed && !isNaN(parsed.getTime())) {
+    return formatDateISO(parsed);
+  }
+  return s;
+}
+
+/**
+ * Redondea un peso calculado al disco estándar más cercano de 2.5 kg.
+ */
+function roundToNearestPlate(kg) {
+  if (!kg || isNaN(kg) || kg <= 0) return 0;
+  var rounded = Math.round(kg / 2.5) * 2.5;
+  return rounded > 0 ? rounded : 2.5;
+}
+
+/**
+ * Devuelve los bloques del WOD del día desde 'Programacion_Diaria' con pesos calculados
+ * en kg desde 'RM_Atenea' para el atleta solicitado.
+ */
+function getDailyWodData(ss, fechaParam, athleteParam, programParam) {
+  var sheet = ss.getSheetByName(TABS.PROGRAMACION_DIARIA);
+  var requestedDate = normalizeDateToISO(fechaParam) || formatDateISO(new Date());
+  var targetProg = String(programParam || getActiveCycle(ss) || "Atenea").trim();
+  var athleteName = String(athleteParam || "").trim();
+
+  if (!sheet || sheet.getLastRow() < 2) {
+    return {
+      status: "ok",
+      fechaSolicitada: requestedDate,
+      fechaMostrada: requestedDate,
+      isFallbackDate: false,
+      programa: targetProg,
+      atleta: athleteName,
+      bloques: []
+    };
+  }
+
+  var lastRow = sheet.getLastRow();
+  var values = sheet.getRange(2, 1, lastRow - 1, 10).getValues();
+
+  // Cargar RMs de Atenea para el atleta (con equivalencias Jerk/Clean/Snatch)
+  var rmMapAll = getRmData(ss, "Atenea");
+  var athleteRms = {};
+  if (athleteName) {
+    var normAth = athleteName.toLowerCase();
+    for (var k in rmMapAll) {
+      if (k.toLowerCase() === normAth) {
+        athleteRms = rmMapAll[k] || {};
+        break;
+      }
+    }
+  }
+
+  var allValidRows = [];
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var fIso = normalizeDateToISO(row[0]);
+    if (!fIso) continue;
+    allValidRows.push({
+      fecha: fIso,
+      ciclo: String(row[1] || "Atenea").trim(),
+      semana: parseInt(row[2], 10) || getCurrentWeek(ss),
+      programa: String(row[3] || "Atenea").trim(),
+      bloque: String(row[4] || "").trim(),
+      orden: parseInt(row[5], 10) || (i + 1),
+      ejercicio: String(row[6] || "").trim(),
+      esquema: String(row[7] || "").trim(),
+      porcentaje: parseFloat(String(row[8] || "0").replace("%", "").replace(",", ".")) || 0,
+      notas: String(row[9] || "").trim()
+    });
+  }
+
+  var matched = allValidRows.filter(function(r) {
+    return r.fecha === requestedDate;
+  });
+
+  var shownDate = requestedDate;
+  var isFallback = false;
+
+  if (matched.length === 0 && allValidRows.length > 0) {
+    // Buscar la fecha más reciente programada
+    var datesSorted = allValidRows.map(function(r) { return r.fecha; }).sort();
+    shownDate = datesSorted[datesSorted.length - 1];
+    isFallback = true;
+    matched = allValidRows.filter(function(r) { return r.fecha === shownDate; });
+  }
+
+  matched.sort(function(a, b) { return a.orden - b.orden; });
+
+  var enriched = matched.map(function(b) {
+    var rmRef = 0;
+    var pesoCalc = 0;
+    if (b.porcentaje > 0 && athleteName) {
+      var mother = getMotherExerciseKey(b.ejercicio) || b.ejercicio;
+      rmRef = parseFloat(athleteRms[b.ejercicio] || athleteRms[mother] || 0) || 0;
+      if (rmRef > 0) {
+        pesoCalc = roundToNearestPlate((rmRef * b.porcentaje) / 100);
+      }
+    }
+    return {
+      fecha: b.fecha,
+      ciclo: b.ciclo,
+      semana: b.semana,
+      programa: b.programa,
+      bloque: b.bloque,
+      orden: b.orden,
+      ejercicio: b.ejercicio,
+      esquema: b.esquema,
+      porcentaje1RM: b.porcentaje,
+      rmReferenciaKg: rmRef,
+      pesoCalculadoKg: pesoCalc,
+      notas: b.notas
+    };
+  });
+
+  return {
+    status: "ok",
+    fechaSolicitada: requestedDate,
+    fechaMostrada: shownDate,
+    isFallbackDate: isFallback,
+    programa: targetProg,
+    atleta: athleteName,
+    bloques: enriched
+  };
+}
+
+/**
+ * Devuelve el Tablero del Día (Leaderboard) desde 'Registro_Diario' agrupado en Rx y Scaled.
+ * NUNCA expone datos de Wellness, fatiga ni molestias médicas.
+ */
+function getDailyLeaderboardData(ss, fechaParam) {
+  var requestedDate = normalizeDateToISO(fechaParam) || formatDateISO(new Date());
+  var sheet = ss.getSheetByName(TABS.REGISTRO_DIARIO);
+
+  if (!sheet || sheet.getLastRow() < 2) {
+    return { status: "ok", fechaSolicitada: requestedDate, fechaMostrada: requestedDate, isFallbackDate: false, rx: [], scaled: [] };
+  }
+
+  var lastRow = sheet.getLastRow();
+  var startRow = Math.max(2, lastRow - 150);
+  var numRows = lastRow - startRow + 1;
+  var values = sheet.getRange(startRow, 1, numRows, 26).getValues();
+
+  var parsedRows = [];
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var ath = String(row[0] || "").trim();
+    if (!ath) continue;
+    var fIso = normalizeDateToISO(row[1]);
+    if (!fIso) continue;
+    var ej = String(row[4] || "").trim();
+    var cat = String(row[5] || "").trim();
+    var carga = parseFloat(String(row[8] || "0").replace(",", ".")) || 0;
+    var duracion = String(row[22] || "").trim();
+    var score = parseFloat(String(row[23] || "0").replace(",", ".")) || 0;
+    var repsTot = parseFloat(String(row[11] || "0").replace(",", ".")) || 0;
+    parsedRows.push({
+      fecha: fIso,
+      atleta: ath,
+      ejercicio: ej,
+      categoria: cat,
+      carga: carga,
+      duracion: duracion,
+      score: score,
+      repsTotales: repsTot
+    });
+  }
+
+  var dayRows = parsedRows.filter(function(r) { return r.fecha === requestedDate; });
+  var shownDate = requestedDate;
+  var isFallback = false;
+
+  if (dayRows.length === 0 && parsedRows.length > 0) {
+    var dates = parsedRows.map(function(r) { return r.fecha; }).sort();
+    shownDate = dates[dates.length - 1];
+    isFallback = true;
+    dayRows = parsedRows.filter(function(r) { return r.fecha === shownDate; });
+  }
+
+  // Priorizar Metcon / WOD si existen en el día; si no, mostrar las marcas destacadas del día
+  var metcons = dayRows.filter(function(r) {
+    var c = r.categoria.toLowerCase();
+    return c.indexOf("metcon") !== -1 || c.indexOf("wod") !== -1;
+  });
+  var sourceRows = metcons.length > 0 ? metcons : dayRows;
+
+  // Consolidar 1 entrada principal por atleta
+  var byAthlete = {};
+  for (var j = 0; j < sourceRows.length; j++) {
+    var item = sourceRows[j];
+    var ejLower = item.ejercicio.toLowerCase();
+    var isScaled = (
+      ejLower.indexOf("scaled") !== -1 ||
+      ejLower.indexOf("banda") !== -1 ||
+      ejLower.indexOf("escalado") !== -1 ||
+      ejLower.indexOf("cajón") !== -1 ||
+      ejLower.indexOf("negativa") !== -1
+    );
+    var level = isScaled ? "Scaled" : "Rx";
+
+    var displayScore = "";
+    var sortVal = 0;
+    if (item.categoria.toLowerCase().indexOf("metcon") !== -1 || item.categoria.toLowerCase().indexOf("wod") !== -1) {
+      displayScore = item.duracion ? (item.duracion + (item.score > 0 ? " · " + item.score.toFixed(3) : "")) : (item.score > 0 ? item.score.toFixed(3) + " rds" : "Completado");
+      sortVal = item.score > 0 ? item.score : 1;
+    } else if (item.categoria.toLowerCase().indexOf("cardio") !== -1) {
+      displayScore = item.repsTotales.toFixed(2) + " km" + (item.duracion ? " · " + item.duracion : "");
+      sortVal = item.repsTotales;
+    } else if (item.carga > 0) {
+      displayScore = item.carga + " kg";
+      sortVal = item.carga;
+    } else {
+      displayScore = item.repsTotales + " reps";
+      sortVal = item.repsTotales;
+    }
+
+    if (!byAthlete[item.atleta] || sortVal > byAthlete[item.atleta].sortVal) {
+      byAthlete[item.atleta] = {
+        atleta: item.atleta,
+        ejercicio: item.ejercicio,
+        categoria: item.categoria,
+        resultado: displayScore,
+        nivel: level,
+        sortVal: sortVal
+      };
+    }
+  }
+
+  var rxList = [];
+  var scaledList = [];
+  for (var aKey in byAthlete) {
+    var entry = byAthlete[aKey];
+    if (entry.nivel === "Scaled") scaledList.push(entry);
+    else rxList.push(entry);
+  }
+
+  rxList.sort(function(a, b) { return b.sortVal - a.sortVal; });
+  scaledList.sort(function(a, b) { return b.sortVal - a.sortVal; });
+
+  return {
+    status: "ok",
+    fechaSolicitada: requestedDate,
+    fechaMostrada: shownDate,
+    isFallbackDate: isFallback,
+    rx: rxList,
+    scaled: scaledList
+  };
+}
+
+/**
+ * Publica nuevos bloques en 'Programacion_Diaria' (exclusivo rol Coach).
+ */
+function publishDailyWodBlocks(ss, data) {
+  var rol = String(data.rol || "").trim().toLowerCase();
+  if (rol !== "coach") {
+    return { status: "error", message: "Acceso denegado: solo el rol Coach puede publicar programación." };
+  }
+
+  var bloques = data.bloques;
+  if (!bloques || !Array.isArray(bloques) || bloques.length === 0) {
+    return { status: "error", message: "Debes incluir al menos un bloque para publicar." };
+  }
+
+  var sheet = ss.getSheetByName(TABS.PROGRAMACION_DIARIA);
+  if (!sheet) {
+    sheet = ss.insertSheet(TABS.PROGRAMACION_DIARIA);
+    sheet.getRange(1, 1, 1, 10).setValues([[
+      "Fecha", "Ciclo", "Semana", "Programa", "Bloque", "Orden",
+      "Ejercicio", "Esquema_Sets_Reps", "Porcentaje_1RM", "Notas_Coach"
+    ]]);
+    sheet.setFrozenRows(1);
+  }
+
+  var fecha = normalizeDateToISO(data.fecha) || formatDateISO(new Date());
+  var ciclo = String(data.ciclo || getActiveCycle(ss) || "Atenea").trim();
+  var semana = parseInt(data.semana, 10) || getCurrentWeek(ss);
+  var programa = String(data.programa || ciclo).trim();
+
+  var rowsToWrite = [];
+  for (var i = 0; i < bloques.length; i++) {
+    var b = bloques[i];
+    rowsToWrite.push([
+      fecha,
+      ciclo,
+      semana,
+      programa,
+      String(b.bloque || ("Bloque " + (i + 1))).trim(),
+      parseInt(b.orden, 10) || (i + 1),
+      String(b.ejercicio || "").trim(),
+      String(b.esquema || "").trim(),
+      parseFloat(String(b.porcentaje || "0").replace("%", "").replace(",", ".")) || 0,
+      String(b.notas || "").trim()
+    ]);
+  }
+
+  var startRow = getFirstEmptyRowByColumnA(sheet);
+  var endRow = startRow + rowsToWrite.length - 1;
+  if (endRow >= sheet.getMaxRows()) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), rowsToWrite.length + 2);
+  }
+  sheet.getRange(startRow, 1, rowsToWrite.length, 10).setValues(rowsToWrite);
+  SpreadsheetApp.flush();
+  ensureSingleCleanBottomRow(sheet, endRow);
+
+  logScriptEvent(ss, "PUBLISH_DAILY_WOD", data.atleta || "Coach", startRow, "HEALTHY", "Fecha: " + fecha + " | Bloques: " + rowsToWrite.length);
+  return { status: "ok", message: "Programación publicada exitosamente (" + rowsToWrite.length + " bloques).", insertedCount: rowsToWrite.length, fecha: fecha };
+}
+
 

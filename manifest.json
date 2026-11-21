@@ -1,0 +1,26 @@
+{
+  "name": "Kleos Performance",
+  "short_name": "Kleos",
+  "description": "Plataforma Kleos PWA: WOD del Día con cálculo automático de pesos %1RM, Reloj WOD, Registro Diario y Telemetría Atlética.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0f172a",
+  "background_color": "#0f172a",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%230f172a'/%3E%3Cpath d='M58 58C38 86 38 124 68 152M134 58C154 86 154 124 124 152M96 30V162M68 40L96 22L124 40M58 96L96 78L134 96M58 142L96 124L134 142' stroke='%23e6b422' stroke-width='10' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%230f172a'/%3E%3Cpath d='M154 154C102 230 102 332 180 406M358 154C410 230 410 332 332 406M256 80V432M180 106L256 58L332 106M154 256L256 208L358 256M154 378L256 330L358 378' stroke='%23e6b422' stroke-width='26' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

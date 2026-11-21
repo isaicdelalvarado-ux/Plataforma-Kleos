@@ -7,7 +7,8 @@
   <meta name="description" content="Plataforma Kleos: Captura de datos atléticos para Google Sheets y Looker Studio. Formulario de la Mañana (Wellness) y Registro Diario (WOD/Fuerza/Cardio con 1RM Epley).">
   
   <!-- Optimización Móvil & PWA para Atletas en Box y Casa -->
-  <meta name="theme-color" content="#06080c">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="manifest" href="manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Kleos">
@@ -38,11 +39,47 @@
   <!-- Canvas Confetti para Celebración Épica de Récords Personales (PR) -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
 
-  <link rel="stylesheet" href="css/styles.css?v=2.4">
+  <link rel="stylesheet" href="css/styles.css?v=3.0">
 </head>
 <body>
   <!-- Fondo cinemático del Partenón con velo oscuro -->
   <div class="background-overlay"></div>
+
+  <!-- PANTALLA DE LOGIN RÁPIDO PWA (USUARIO + PIN 4 DÍGITOS) -->
+  <div id="loginOverlay" class="login-overlay" aria-label="Acceso Plataforma Kleos">
+    <div class="login-card glass-card">
+      <div class="login-brand">
+        <div class="brand-badge">
+          <svg class="greek-symbol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M7 6C5 9 5 13 8 16M17 6C19 9 19 13 16 16M12 3V21M9 4L12 2L15 4M8 10L12 8L16 10M8 17L12 15L16 17" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>KLEOS PERFORMANCE PWA</span>
+        </div>
+        <h2 class="login-title">Acceso de Atletas</h2>
+        <p class="login-subtitle">Ingresa tu usuario y PIN personal de 4 dígitos para cargar tus pesos del Ciclo Atenea.</p>
+      </div>
+      <form id="formLoginPwa" class="login-form" novalidate>
+        <div class="form-group">
+          <label for="loginUsername">Usuario</label>
+          <input type="text" id="loginUsername" autocomplete="username" autocapitalize="none" placeholder="Ej: andrea.flores" required>
+        </div>
+        <div class="form-group">
+          <label for="loginPin">PIN (4 dígitos)</label>
+          <input type="password" id="loginPin" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="current-password" placeholder="••••" required>
+        </div>
+        <div id="loginErrorMsg" class="login-error-msg" style="display: none;"></div>
+        <button type="submit" id="btnSubmitLogin" class="btn-primary login-submit-btn">
+          <span>⚡ Ingresar a Kleos</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- BANNER DE SINCRONIZACIÓN OFFLINE (kleos_pending_sync) -->
+  <div id="offlineSyncBanner" class="offline-sync-banner" style="display: none;">
+    <span id="offlineSyncText">📡 0 registros pendientes de sincronizar</span>
+    <button type="button" id="btnRetryOfflineSync" class="btn-retry-sync">Reintentar</button>
+  </div>
 
   <div class="app-container">
     <!-- Header Principal con Identidad Griega -->
@@ -55,6 +92,18 @@
       </div>
       <h1 class="brand-title">K L E O S</h1>
       <p class="brand-tagline">“La gloria eterna que se forja en cada entrenamiento”</p>
+
+      <!-- BARRA DE SESIÓN ACTIVA PWA (ROL, PUBLICAR WOD COACH Y SALIR) -->
+      <div id="sessionUserBar" class="session-user-bar glass-card" style="display: none;">
+        <div class="session-user-info">
+          <span id="sessionRoleBadge" class="session-role-badge">⚡ Atleta</span>
+          <strong id="sessionUserName" class="session-user-name">--</strong>
+        </div>
+        <div class="session-user-actions">
+          <button type="button" id="btnOpenCoachWod" class="btn-coach-publish" style="display: none;">+ Publicar WOD</button>
+          <button type="button" id="btnLogoutPwa" class="btn-logout-pwa" title="Cerrar sesión">Salir</button>
+        </div>
+      </div>
 
       <!-- BARRA DE ATLETA DINÁMICA (Consumida de 'Nombre de Atletas') -->
       <div class="athlete-bar glass-card">
@@ -158,10 +207,101 @@
     </nav>
 
     <!-- ============================================== -->
-    <!-- SECCIÓN 1: FORMULARIO DE LA MAÑANA (WELLNESS)   -->
+    <!-- CONTENEDOR PRINCIPAL PWA (4 TABS MÓVILES)      -->
     <!-- ============================================== -->
     <main class="panels-container">
-      <section id="panelWellness" class="tab-panel active" role="tabpanel" aria-labelledby="tabWellness">
+
+      <!-- ============================================== -->
+      <!-- TAB 1 PWA: HOY (WOD DEL DÍA + LEADERBOARD)     -->
+      <!-- ============================================== -->
+      <section id="panelHoy" class="tab-panel active" role="tabpanel" aria-label="WOD del Día">
+        <div class="glass-card pwa-hoy-card">
+          <div class="hoy-header">
+            <div>
+              <div class="dashboard-tag">⚡ PROGRAMACIÓN DIARIA &bull; CICLO ATENEA</div>
+              <h2 class="hoy-title">Entrenamiento de Hoy</h2>
+              <p class="hoy-subtitle" id="hoyDateSubtitle">Cargando bloques y pesos calculados desde tu 1RM...</p>
+            </div>
+            <div class="hoy-date-controls">
+              <input type="date" id="hoyDatePicker" class="hoy-date-input" aria-label="Seleccionar fecha del WOD">
+              <button type="button" id="btnOpenTimerFromHoy" class="btn-open-timer">⏱️ Abrir Reloj WOD</button>
+            </div>
+          </div>
+
+          <div id="hoyWodBlocksContainer" class="hoy-blocks-list">
+            <div class="hoy-loading-msg">Cargando programación diaria desde Google Sheets...</div>
+          </div>
+        </div>
+
+        <!-- TABLERO DEL DÍA (LEADERBOARD RX / SCALED - CERO DATOS MÉDICOS) -->
+        <div class="glass-card pwa-leaderboard-card">
+          <div class="leaderboard-header">
+            <div>
+              <h3 class="leaderboard-title">🏆 Tablero del Día (Leaderboard)</h3>
+              <p class="leaderboard-subtitle" id="leaderboardDateSubtitle">Resultados públicos del día (Rx / Scaled)</p>
+            </div>
+            <div class="leaderboard-level-tabs" role="tablist">
+              <button type="button" class="lb-tab-btn active" data-level="rx" id="btnLbRx">Rx</button>
+              <button type="button" class="lb-tab-btn" data-level="scaled" id="btnLbScaled">Scaled</button>
+            </div>
+          </div>
+          <div id="leaderboardListContainer" class="leaderboard-list">
+            <div class="hoy-loading-msg">Cargando resultados del día...</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================== -->
+      <!-- TAB 2 PWA: RELOJ WOD INTEGRADO                 -->
+      <!-- ============================================== -->
+      <section id="panelReloj" class="tab-panel" role="tabpanel" aria-label="Reloj WOD">
+        <div class="glass-card pwa-timer-card">
+          <div class="timer-header">
+            <div class="dashboard-tag">⏱️ CRONÓMETRO OFICIAL KLEOS &bull; AUDIO 3-2-1</div>
+            <h2 class="timer-title">Reloj WOD Integrado</h2>
+          </div>
+
+          <div class="timer-mode-selector" role="tablist">
+            <button type="button" class="timer-mode-btn active" data-mode="fortime">For Time</button>
+            <button type="button" class="timer-mode-btn" data-mode="amrap">AMRAP</button>
+            <button type="button" class="timer-mode-btn" data-mode="emom">EMOM</button>
+          </div>
+
+          <div class="timer-config-row">
+            <div class="timer-cfg-item">
+              <label for="timerMinutesInput" id="lblTimerMinutes">Time Cap / Minutos</label>
+              <input type="number" id="timerMinutesInput" min="1" max="90" value="12">
+            </div>
+            <div class="timer-cfg-item" id="timerEmomIntervalWrap" style="display: none;">
+              <label for="timerIntervalSecInput">Cada (seg)</label>
+              <input type="number" id="timerIntervalSecInput" min="15" max="300" value="60">
+            </div>
+          </div>
+
+          <div class="timer-display-box" id="timerDisplayBox">
+            <div class="timer-phase-badge" id="timerPhaseBadge">LISTO · FOR TIME</div>
+            <div class="timer-digits" id="timerDigits">00:00</div>
+            <div class="timer-round-indicator" id="timerRoundIndicator" style="display: none;">Ronda 1 / 12</div>
+          </div>
+
+          <div class="timer-controls-grid">
+            <button type="button" id="btnTimerStartPause" class="btn-primary timer-btn-main">▶ Iniciar (3-2-1)</button>
+            <button type="button" id="btnTimerReset" class="btn-secondary timer-btn-reset">↺ Reiniciar</button>
+          </div>
+
+          <button type="button" id="btnTimerToRegister" class="btn-timer-transfer">
+            ✅ Terminé → Pasar Tiempo al Registro
+          </button>
+        </div>
+      </section>
+
+      <!-- SUB-NAVEGACIÓN DE TAB 3 (REGISTRAR + WELLNESS) -->
+      <div id="registrarSubTabs" class="registrar-subtabs" style="display: none;">
+        <button type="button" id="subTabBtnWod" class="subtab-btn active">🏋️ Registrar Entrenamiento</button>
+        <button type="button" id="subTabBtnWellness" class="subtab-btn">☀️ Wellness Matutino</button>
+      </div>
+
+      <section id="panelWellness" class="tab-panel" role="tabpanel" aria-labelledby="tabWellness">
         <form id="formWellness" class="glass-card form-card morning-form-theme" novalidate>
           <div class="form-header">
             <div class="form-header-badge morning-tag">☀️ PESTAÑA: 'Wellness' &bull; INDEPENDIENTE</div>
@@ -955,6 +1095,32 @@
 
           </div>
 
+          <!-- FILA 0 (PERFIL PWA): RACHA DE CONSTANCIA + CAMBIO RÁPIDO DE PIN -->
+          <div class="perfil-pwa-top-grid">
+            <div class="streak-card glass-panel" id="consistencyStreakBlock">
+              <div class="streak-header">
+                <div>
+                  <h3 class="streak-title">🔥 Racha de Constancia · Ciclo Atenea</h3>
+                  <p class="streak-subtitle">Últimos 42 días de entrenamientos registrados</p>
+                </div>
+                <div class="streak-counter-badge" id="streakCounterBadge">0 días</div>
+              </div>
+              <div class="streak-heatmap-grid" id="streakHeatmapGrid"></div>
+            </div>
+
+            <div class="pin-card glass-panel" id="updatePinBlock">
+              <h3 class="pin-card-title">🔐 Mi Clave de Acceso (PIN)</h3>
+              <p class="pin-card-subtitle">Actualiza tu PIN personal de 4 dígitos</p>
+              <form id="formUpdatePin" class="pin-update-form" novalidate>
+                <div class="pin-inputs-row">
+                  <input type="password" id="currentPinInput" inputmode="numeric" maxlength="4" placeholder="PIN actual" required>
+                  <input type="password" id="newPinInput" inputmode="numeric" maxlength="4" placeholder="Nuevo PIN" required>
+                </div>
+                <button type="submit" id="btnSaveNewPin" class="btn-secondary pin-save-btn">Actualizar PIN</button>
+              </form>
+            </div>
+          </div>
+
           <!-- FILA 3: DOMINIO & VOLUMEN DE SKILLS GIMNÁSTICOS -->
           <div class="dashboard-gym-block glass-panel" id="dashboardGymBlock">
             <div class="gym-block-header">
@@ -1085,9 +1251,71 @@
     }
   </style>
 
+  <!-- MODAL COACH: PUBLICAR WOD DIARIO + PARSER RÁPIDO WHATSAPP (NATIVO <dialog>) -->
+  <dialog id="coachWodModal" class="coach-wod-dialog" closedby="any" aria-labelledby="coachWodTitle">
+    <div class="coach-modal-content">
+      <div class="coach-modal-header">
+        <div>
+          <span class="dashboard-tag">🏛️ MODO COACH &bull; PROGRAMACION_DIARIA</span>
+          <h2 id="coachWodTitle">Publicar WOD del Día</h2>
+        </div>
+        <button type="button" id="btnCloseCoachWod" class="coach-close-btn" aria-label="Cerrar modal">&times;</button>
+      </div>
+
+      <div class="coach-meta-grid">
+        <div class="form-group">
+          <label for="coachWodDate">Fecha</label>
+          <input type="date" id="coachWodDate" required>
+        </div>
+        <div class="form-group">
+          <label for="coachWodProgram">Programa / Ciclo</label>
+          <input type="text" id="coachWodProgram" value="Atenea" required>
+        </div>
+      </div>
+
+      <!-- PARSER RÁPIDO DESDE WHATSAPP -->
+      <div class="whatsapp-parser-box">
+        <label for="whatsappWodInput">📋 Pegar WOD desde WhatsApp (Auto-Parser A), B), C) y @ %1RM)</label>
+        <textarea id="whatsappWodInput" rows="4" placeholder="Ej:&#10;A) Back Squat 5x5 @ 75% - Tempo controlado&#10;B) Pull Ups 4x8 - Progresión estricta o kipping&#10;C) Metcon AMRAP 12': 10 Thrusters + 10 T2B + 200m Run"></textarea>
+        <div class="whatsapp-parser-actions">
+          <button type="button" id="btnParseWhatsappWod" class="btn-secondary">⚡ Parsear a Bloques Editables</button>
+          <button type="button" id="btnAddManualBlock" class="btn-secondary">+ Agregar Bloque Manual</button>
+        </div>
+      </div>
+
+      <!-- BORRADOR EDITABLE DE BLOQUES -->
+      <div id="coachDraftBlocks" class="coach-draft-blocks"></div>
+
+      <div class="coach-modal-footer">
+        <button type="button" id="btnCancelCoachWod" class="btn-secondary">Cancelar</button>
+        <button type="button" id="btnPublishCoachWod" class="btn-primary">🚀 Publicar WOD</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- BARRA INFERIOR MÓVIL PWA (BOTTOM TAB BAR · 4 PESTAÑAS) -->
+  <nav id="bottomTabBar" class="bottom-tab-bar" role="tablist" aria-label="Navegación Principal Kleos">
+    <button type="button" class="bottom-tab-item active" id="navTabHoy" data-tab="hoy" role="tab" aria-selected="true">
+      <span class="bt-icon">⚡</span>
+      <span class="bt-label">Hoy</span>
+    </button>
+    <button type="button" class="bottom-tab-item" id="navTabReloj" data-tab="reloj" role="tab" aria-selected="false">
+      <span class="bt-icon">⏱️</span>
+      <span class="bt-label">Reloj</span>
+    </button>
+    <button type="button" class="bottom-tab-item" id="navTabRegistrar" data-tab="registrar" role="tab" aria-selected="false">
+      <span class="bt-icon">🏋️</span>
+      <span class="bt-label">Registrar</span>
+    </button>
+    <button type="button" class="bottom-tab-item" id="navTabPerfil" data-tab="perfil" role="tab" aria-selected="false">
+      <span class="bt-icon">📊</span>
+      <span class="bt-label">Perfil</span>
+    </button>
+  </nav>
+
   <!-- TOAST NOTIFICATIONS -->
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="js/app.js?v=2.4"></script>
+  <script src="js/app.js?v=3.0"></script>
 </body>
 </html>

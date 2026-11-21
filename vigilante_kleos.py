@@ -59,7 +59,9 @@ CRITICAL_DOM_IDS = [
     "wodCategory", "wodExercise", "wodVariant", "variantGroup",
     "wodSeries", "wodReps", "wodWeight", "wod1RM", "wodDuration",
     "wodScoreReps", "wodRpe", "epleyBox", "dashboardGymBlock",
-    "gymSkillsGrid", "formWellness", "formWod"
+    "gymSkillsGrid", "formWellness", "formWod",
+    "loginOverlay", "formLoginPwa", "bottomTabBar", "panelHoy",
+    "panelReloj", "coachWodModal", "whatsappWodInput", "formUpdatePin"
 ]
 
 def log_event(msg):
@@ -87,6 +89,8 @@ def audit_web_and_frontend():
         "clean_squat_in_local_code": False,
         "readonly_trap_free": True,
         "dashboard_e2e_ok": True,
+        "pwa_manifest_ok": False,
+        "pwa_endpoints_ok": True,
         "issues": []
     }
 
@@ -130,6 +134,45 @@ def audit_web_and_frontend():
             results["dashboard_e2e_ok"] = False
             results["ok"] = False
             results["issues"].append(f"Error E2E Dashboard para '{target}': {e}")
+
+    # 2b. Pruebas E2E de nuevos endpoints PWA (getDailyWod y getDailyLeaderboard)
+    try:
+        url_wod = f"{SCRIPT_URL}?action=getDailyWod&fecha=2026-11-21&atleta={urllib.parse.quote('Andrea Flores')}"
+        with urllib.request.urlopen(urllib.request.Request(url_wod, headers={'User-Agent': 'KleosGuardian/3.1'}), timeout=15) as r_w:
+            d_w = json.loads(r_w.read().decode('utf-8'))
+            if d_w.get("status") != "ok" or not isinstance(d_w.get("bloques"), list):
+                results["pwa_endpoints_ok"] = False
+                results["ok"] = False
+                results["issues"].append("PWA E2E: getDailyWod no retornó bloques válidos")
+        url_lb = f"{SCRIPT_URL}?action=getDailyLeaderboard&fecha=2026-11-21"
+        with urllib.request.urlopen(urllib.request.Request(url_lb, headers={'User-Agent': 'KleosGuardian/3.1'}), timeout=15) as r_lb:
+            d_lb = json.loads(r_lb.read().decode('utf-8'))
+            if d_lb.get("status") != "ok" or "rx" not in d_lb or "scaled" not in d_lb:
+                results["pwa_endpoints_ok"] = False
+                results["ok"] = False
+                results["issues"].append("PWA E2E: getDailyLeaderboard no retornó estructura Rx/Scaled")
+    except Exception as e:
+        results["pwa_endpoints_ok"] = False
+        results["ok"] = False
+        results["issues"].append(f"Error E2E endpoints PWA: {e}")
+
+    # 2c. Validación de manifest.json (PWA)
+    manifest_path = os.path.join(BASE_DIR, "manifest.json")
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as mf:
+                m_data = json.load(mf)
+            if m_data.get("display") == "standalone" and m_data.get("short_name") == "Kleos":
+                results["pwa_manifest_ok"] = True
+            else:
+                results["ok"] = False
+                results["issues"].append("manifest.json incompleto (falta display=standalone o short_name=Kleos)")
+        except Exception as e:
+            results["ok"] = False
+            results["issues"].append(f"manifest.json inválido: {e}")
+    else:
+        results["ok"] = False
+        results["issues"].append("Falta archivo manifest.json en la raíz del proyecto")
 
     # 3. Verificación de sintaxis JS con Node (node -c js/app.js)
     app_js = os.path.join(BASE_DIR, "js", "app.js")
@@ -403,6 +446,38 @@ def audit_and_heal_google_sheets():
     except Exception:
         issues.append("PESTAÑA FALTANTE: No se encontró 'Control_Ciclo'.")
 
+    # 5. AUDITORÍA DE 'Usuarios_Kleos' Y 'Programacion_Diaria' (PWA)
+    usuarios_count = 0
+    prog_count = 0
+    try:
+        ws_u = sh.worksheet("Usuarios_Kleos")
+        u_vals = ws_u.get_all_values()
+        usuarios_count = max(0, len(u_vals) - 1)
+        if len(u_vals) < 2 or len(u_vals[0]) < 7:
+            issues.append("Usuarios_Kleos incompleta (se requieren 7 columnas A:G y usuarios activos).")
+        seen_users = set()
+        for idx, ur in enumerate(u_vals[1:], start=2):
+            u_name = str(ur[2]).strip().lower() if len(ur) > 2 else ""
+            u_pin = str(ur[3]).strip() if len(ur) > 3 else ""
+            if u_name in seen_users:
+                issues.append(f"Usuarios_Kleos Fila {idx}: Usuario duplicado '{u_name}'")
+            seen_users.add(u_name)
+            if not re.match(r'^\d{4}$', u_pin):
+                issues.append(f"Usuarios_Kleos Fila {idx}: PIN inválido '{u_pin}' (deben ser 4 dígitos)")
+    except Exception as e:
+        issues.append(f"Error auditando Usuarios_Kleos: {e}")
+
+    try:
+        ws_p = sh.worksheet("Programacion_Diaria")
+        p_vals = ws_p.get_all_values()
+        prog_count = max(0, len(p_vals) - 1)
+        if len(p_vals) < 1 or len(p_vals[0]) < 10:
+            issues.append("Programacion_Diaria incompleta (se requieren 10 columnas A:J).")
+        if len(p_vals) >= ws_p.row_count:
+            ws_p.add_rows(2)
+    except Exception as e:
+        issues.append(f"Error auditando Programacion_Diaria: {e}")
+
     return {
         "ok": len(issues) == 0,
         "ciclo_activo": ciclo_activo,
@@ -410,6 +485,8 @@ def audit_and_heal_google_sheets():
         "total_registros_diario": total_filas,
         "total_wellness": well_rows,
         "total_skills_gimnasia": gim_rows,
+        "total_usuarios_kleos": usuarios_count,
+        "total_programacion_diaria": prog_count,
         "total_rm_records": rm_counts.get("RM_Atletas", 0),
         "rm_counts": rm_counts,
         "repaired_formulas_rows": repaired_rows,
@@ -445,8 +522,9 @@ def ejecutar_ciclo_completo():
     log_event(f"  • DOM IDs Críticos & Selects Libres: {'✅ OK' if (web_status['critical_dom_ids_ok'] and web_status['select_locks_free']) else '❌ FALLO'}")
     log_event(f"  • Cache-Busting: {'✅ OK' if web_status['cache_busting_ok'] else '❌ INCONSISTENTE'} ({web_status['cache_versions']})")
     log_event(f"  • Dashboard E2E (Global + Nuevos Atletas): {'✅ OK (0 NaN)' if web_status['dashboard_e2e_ok'] else '❌ FALLO'}")
+    log_event(f"  • PWA (manifest.json + getDailyWod + Leaderboard): {'✅ OK' if (web_status['pwa_manifest_ok'] and web_status['pwa_endpoints_ok']) else '❌ FALLO'}")
     log_event(f"  • Google Sheets ({sheets_status.get('ciclo_activo')} · Sem {sheets_status.get('semana_actual')}): {'✅ 100% ÍNTEGRO' if sheets_status['ok'] else '⚠️ DISCREPANCIAS'}")
-    log_event(f"    - Registro_Diario: {sheets_status['total_registros_diario']} | Wellness: {sheets_status['total_wellness']} | Skills_Gimnasia: {sheets_status['total_skills_gimnasia']}")
+    log_event(f"    - Registro_Diario: {sheets_status['total_registros_diario']} | Wellness: {sheets_status['total_wellness']} | Skills_Gimnasia: {sheets_status['total_skills_gimnasia']} | Usuarios: {sheets_status.get('total_usuarios_kleos', 0)} | Programacion: {sheets_status.get('total_programacion_diaria', 0)}")
 
     if not is_healthy:
         for iss in web_status.get("issues", []) + sheets_status.get("issues", []):

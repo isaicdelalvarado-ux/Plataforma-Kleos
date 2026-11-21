@@ -1534,6 +1534,11 @@ document.addEventListener('DOMContentLoaded', () => {
       clearTimeout(timeoutId);
       console.error('Error al enviar registro:', error);
       const sheetName = type === 'wellness' ? 'Wellness' : 'Registro_Diario';
+      if (typeof enqueueOfflineSync === 'function') {
+        enqueueOfflineSync(type, payload);
+        showToast(`📡 Sin conexión: guardado en cola local (${sheetName}). Se sincronizará automáticamente al reconectar.`, 'error');
+        return { success: true, queuedOffline: true };
+      }
       if (error.name === 'AbortError') {
         showToast(`⏱️ Solicitud enviada hacia '${sheetName}'. El servidor sigue procesando en segundo plano.`, 'success');
         return { success: true, timeout: true };
@@ -2262,6 +2267,9 @@ document.addEventListener('DOMContentLoaded', () => {
     renderZonasCargaChart(data.zonasCarga || {});
     renderGymnasticsGrid(data.gymnastics || {}, selectedCycle);
     renderRmsGrid(data.rms || {}, data.rmDeltas || {}, selectedCycle);
+    if (typeof renderConsistencyStreak === 'function') {
+      renderConsistencyStreak(data.activityDates || []);
+    }
 
     // Badges complementarios
     if (chartWellnessAvg) {
@@ -2634,6 +2642,927 @@ document.addEventListener('DOMContentLoaded', () => {
       const selectedCyc = filtroCiclo ? filtroCiclo.value : currentDashboardCycle;
       loadDashboardData(selectedAth, selectedCyc);
     });
+  }
+
+  // =========================================================================
+  // MÓDULO PWA MÓVIL ÉLITE: OFFLINE QUEUE, AUTH/PIN, 4 TABS, RELOJ WOD, COACH
+  // =========================================================================
+  const OFFLINE_QUEUE_KEY = 'kleos_pending_sync';
+  const SESSION_KEY = 'kleos_session';
+  let activePwaSession = null;
+  let cachedLeaderboardData = { rx: [], scaled: [] };
+  let activeLeaderboardLevel = 'rx';
+
+  // --- 1. COLA OFFLINE EN LOCALSTORAGE (kleos_pending_sync) ---
+  function getOfflineQueue() {
+    try {
+      const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function saveOfflineQueue(queue) {
+    localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+    updateOfflineSyncBanner();
+  }
+
+  function enqueueOfflineSync(type, payload) {
+    const queue = getOfflineQueue();
+    queue.push({
+      id: `sync_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      type: type,
+      payload: payload,
+      createdAt: new Date().toISOString()
+    });
+    saveOfflineQueue(queue);
+  }
+
+  function updateOfflineSyncBanner() {
+    const banner = document.getElementById('offlineSyncBanner');
+    const textEl = document.getElementById('offlineSyncText');
+    if (!banner || !textEl) return;
+    const queue = getOfflineQueue();
+    if (queue.length > 0) {
+      banner.style.display = 'flex';
+      textEl.textContent = `📡 ${queue.length} registro${queue.length > 1 ? 's' : ''} pendiente${queue.length > 1 ? 's' : ''} de sincronizar`;
+    } else {
+      banner.style.display = 'none';
+    }
+  }
+
+  async function syncPendingOfflineQueue(silent = false) {
+    const queue = getOfflineQueue();
+    if (queue.length === 0 || !currentScriptUrl || !navigator.onLine) {
+      updateOfflineSyncBanner();
+      return;
+    }
+
+    const remaining = [];
+    let syncedCount = 0;
+
+    for (const item of queue) {
+      try {
+        const resp = await fetch(currentScriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(item.payload)
+        });
+        if (resp.ok) {
+          syncedCount++;
+        } else {
+          remaining.push(item);
+        }
+      } catch (_) {
+        remaining.push(item);
+      }
+    }
+
+    saveOfflineQueue(remaining);
+    if (syncedCount > 0 && !silent) {
+      showToast(`✅ ${syncedCount} registro(s) offline sincronizados con Google Sheets`, 'success');
+    }
+  }
+
+  const btnRetryOfflineSync = document.getElementById('btnRetryOfflineSync');
+  if (btnRetryOfflineSync) {
+    btnRetryOfflineSync.addEventListener('click', () => syncPendingOfflineQueue(false));
+  }
+  window.addEventListener('online', () => syncPendingOfflineQueue(false));
+  updateOfflineSyncBanner();
+
+  // --- 2. AUTENTICACIÓN RÁPIDA (USUARIO + PIN 4 DÍGITOS) Y PRIVACIDAD ---
+  const loginOverlay = document.getElementById('loginOverlay');
+  const formLoginPwa = document.getElementById('formLoginPwa');
+  const loginUsername = document.getElementById('loginUsername');
+  const loginPin = document.getElementById('loginPin');
+  const loginErrorMsg = document.getElementById('loginErrorMsg');
+  const btnSubmitLogin = document.getElementById('btnSubmitLogin');
+  const sessionUserBar = document.getElementById('sessionUserBar');
+  const sessionRoleBadge = document.getElementById('sessionRoleBadge');
+  const sessionUserName = document.getElementById('sessionUserName');
+  const btnOpenCoachWod = document.getElementById('btnOpenCoachWod');
+  const btnLogoutPwa = document.getElementById('btnLogoutPwa');
+
+  function applySessionPrivacyLock(session) {
+    activePwaSession = session;
+    if (!session) {
+      if (loginOverlay) loginOverlay.classList.remove('hidden');
+      if (sessionUserBar) sessionUserBar.style.display = 'none';
+      return;
+    }
+
+    if (loginOverlay) loginOverlay.classList.add('hidden');
+    if (sessionUserBar) sessionUserBar.style.display = 'flex';
+    if (sessionUserName) sessionUserName.textContent = session.atleta;
+
+    const isCoach = String(session.rol || '').toLowerCase() === 'coach';
+    if (sessionRoleBadge) {
+      sessionRoleBadge.textContent = isCoach ? '🏛️ Coach' : '⚡ Atleta';
+      sessionRoleBadge.classList.toggle('role-coach', isCoach);
+    }
+    if (btnOpenCoachWod) {
+      btnOpenCoachWod.style.display = isCoach ? 'inline-flex' : 'none';
+    }
+
+    if (!isCoach) {
+      // Privacidad total para rol Atleta: bloquear selectores a su propio nombre
+      if (athleteSelect) {
+        athleteSelect.innerHTML = `<option value="${session.atleta}" selected>${session.atleta}</option>`;
+        athleteSelect.value = session.atleta;
+        athleteSelect.setAttribute('data-locked-athlete', session.atleta);
+      }
+      if (dashboardAthleteSelect) {
+        dashboardAthleteSelect.innerHTML = `<option value="${session.atleta}" selected>${session.atleta}</option>`;
+        dashboardAthleteSelect.value = session.atleta;
+      }
+      currentDashboardAthlete = session.atleta;
+      localStorage.setItem(STORAGE_KEYS.ATHLETE, session.atleta);
+      const athBar = document.querySelector('.athlete-bar');
+      if (athBar) athBar.style.display = 'none';
+      const dashAthGroup = document.querySelector('.athlete-select-group');
+      if (dashAthGroup) dashAthGroup.style.display = 'none';
+    } else {
+      const athBar = document.querySelector('.athlete-bar');
+      if (athBar) athBar.style.display = 'flex';
+      const dashAthGroup = document.querySelector('.athlete-select-group');
+      if (dashAthGroup) dashAthGroup.style.display = 'flex';
+      if (athleteSelect && athletesList.length > 0) {
+        renderAthletesSelect(athletesList);
+        renderDashboardAthletesSelect(athletesList);
+      }
+    }
+
+    updateExerciseRmState();
+    switchPwaTab('hoy');
+    syncPendingOfflineQueue(true);
+  }
+
+  // Interceptar fetchAthletesAndRm para respetar bloqueo de privacidad de Atleta tras refrescos
+  const origRenderAthletesSelect = renderAthletesSelect;
+  renderAthletesSelect = function (list) {
+    if (activePwaSession && String(activePwaSession.rol || '').toLowerCase() !== 'coach') {
+      if (athleteSelect) {
+        athleteSelect.innerHTML = `<option value="${activePwaSession.atleta}" selected>${activePwaSession.atleta}</option>`;
+        athleteSelect.value = activePwaSession.atleta;
+      }
+      return;
+    }
+    origRenderAthletesSelect(list);
+  };
+
+  const origRenderDashAthletes = renderDashboardAthletesSelect;
+  renderDashboardAthletesSelect = function (list) {
+    if (activePwaSession && String(activePwaSession.rol || '').toLowerCase() !== 'coach') {
+      if (dashboardAthleteSelect) {
+        dashboardAthleteSelect.innerHTML = `<option value="${activePwaSession.atleta}" selected>${activePwaSession.atleta}</option>`;
+        dashboardAthleteSelect.value = activePwaSession.atleta;
+      }
+      return;
+    }
+    origRenderDashAthletes(list);
+  };
+
+  if (formLoginPwa) {
+    formLoginPwa.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const user = (loginUsername ? loginUsername.value : '').trim().toLowerCase();
+      const pin = (loginPin ? loginPin.value : '').trim();
+
+      if (!user || pin.length !== 4) {
+        if (loginErrorMsg) {
+          loginErrorMsg.textContent = 'Ingresa tu usuario y tu PIN de 4 dígitos.';
+          loginErrorMsg.style.display = 'block';
+        }
+        return;
+      }
+
+      if (loginErrorMsg) loginErrorMsg.style.display = 'none';
+      if (btnSubmitLogin) {
+        btnSubmitLogin.disabled = true;
+        btnSubmitLogin.textContent = 'Verificando...';
+      }
+
+      try {
+        const loginUrl = `${currentScriptUrl}?action=login&usuario=${encodeURIComponent(user)}&pin=${encodeURIComponent(pin)}`;
+        const resp = await fetch(loginUrl, { method: 'GET', mode: 'cors' });
+        const data = await resp.json();
+
+        if (data && data.status === 'ok' && data.atleta) {
+          const sessionObj = {
+            idAtleta: data.idAtleta || '',
+            atleta: data.atleta,
+            usuario: data.usuario || user,
+            rol: data.rol || 'Atleta',
+            programa: data.programa || 'Atenea'
+          };
+          localStorage.setItem(SESSION_KEY, JSON.stringify(sessionObj));
+          if (data.activeCycle) localStorage.setItem('kleos_active_cycle', data.activeCycle);
+          if (data.currentWeek) localStorage.setItem('kleos_current_week', String(data.currentWeek));
+          showToast(`⚡ Bienvenido/a, ${sessionObj.atleta}`, 'success');
+          applySessionPrivacyLock(sessionObj);
+        } else {
+          if (loginErrorMsg) {
+            loginErrorMsg.textContent = (data && data.message) || 'Credenciales incorrectas.';
+            loginErrorMsg.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (loginErrorMsg) {
+          loginErrorMsg.textContent = 'No se pudo conectar con Kleos. Verifica tu conexión.';
+          loginErrorMsg.style.display = 'block';
+        }
+      } finally {
+        if (btnSubmitLogin) {
+          btnSubmitLogin.disabled = false;
+          btnSubmitLogin.innerHTML = '<span>⚡ Ingresar a Kleos</span>';
+        }
+      }
+    });
+  }
+
+  if (btnLogoutPwa) {
+    btnLogoutPwa.addEventListener('click', () => {
+      localStorage.removeItem(SESSION_KEY);
+      activePwaSession = null;
+      if (loginPin) loginPin.value = '';
+      applySessionPrivacyLock(null);
+    });
+  }
+
+  // --- 3. NAVEGACIÓN BOTTOM TAB BAR (4 PESTAÑAS) ---
+  const panelHoy = document.getElementById('panelHoy');
+  const panelReloj = document.getElementById('panelReloj');
+  const registrarSubTabs = document.getElementById('registrarSubTabs');
+  const subTabBtnWod = document.getElementById('subTabBtnWod');
+  const subTabBtnWellness = document.getElementById('subTabBtnWellness');
+  const bottomTabBtns = document.querySelectorAll('.bottom-tab-item');
+  let activeRegistrarSub = 'wod';
+
+  function switchPwaTab(tabName) {
+    bottomTabBtns.forEach(btn => {
+      const isMatch = btn.getAttribute('data-tab') === tabName;
+      btn.classList.toggle('active', isMatch);
+      btn.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+    });
+
+    [panelHoy, panelReloj, panelWellness, panelWod, panelDashboard].forEach(p => {
+      if (p) p.classList.remove('active');
+    });
+    if (registrarSubTabs) registrarSubTabs.style.display = 'none';
+
+    if (tabName === 'hoy') {
+      if (panelHoy) panelHoy.classList.add('active');
+      loadDailyWod();
+      loadDailyLeaderboard();
+    } else if (tabName === 'reloj') {
+      if (panelReloj) panelReloj.classList.add('active');
+    } else if (tabName === 'registrar') {
+      if (registrarSubTabs) registrarSubTabs.style.display = 'grid';
+      if (activeRegistrarSub === 'wellness') {
+        if (panelWellness) panelWellness.classList.add('active');
+        if (subTabBtnWellness) subTabBtnWellness.classList.add('active');
+        if (subTabBtnWod) subTabBtnWod.classList.remove('active');
+      } else {
+        if (panelWod) panelWod.classList.add('active');
+        if (subTabBtnWod) subTabBtnWod.classList.add('active');
+        if (subTabBtnWellness) subTabBtnWellness.classList.remove('active');
+      }
+    } else if (tabName === 'perfil') {
+      if (panelDashboard) panelDashboard.classList.add('active');
+      const targetAth = (activePwaSession && String(activePwaSession.rol).toLowerCase() !== 'coach')
+        ? activePwaSession.atleta
+        : (dashboardAthleteSelect ? dashboardAthleteSelect.value : 'todos');
+      const targetCyc = filtroCiclo ? filtroCiclo.value : (currentDashboardCycle || 'Atenea');
+      loadDashboardData(targetAth, targetCyc);
+    }
+  }
+
+  bottomTabBtns.forEach(btn => {
+    btn.addEventListener('click', () => switchPwaTab(btn.getAttribute('data-tab')));
+  });
+
+  if (subTabBtnWod) {
+    subTabBtnWod.addEventListener('click', () => {
+      activeRegistrarSub = 'wod';
+      switchPwaTab('registrar');
+    });
+  }
+  if (subTabBtnWellness) {
+    subTabBtnWellness.addEventListener('click', () => {
+      activeRegistrarSub = 'wellness';
+      switchPwaTab('registrar');
+    });
+  }
+
+  // --- 4. TAB 1: HOY (WOD DEL DÍA + LEADERBOARD) ---
+  const hoyDatePicker = document.getElementById('hoyDatePicker');
+  const hoyDateSubtitle = document.getElementById('hoyDateSubtitle');
+  const hoyWodBlocksContainer = document.getElementById('hoyWodBlocksContainer');
+  const btnOpenTimerFromHoy = document.getElementById('btnOpenTimerFromHoy');
+  const leaderboardDateSubtitle = document.getElementById('leaderboardDateSubtitle');
+  const leaderboardListContainer = document.getElementById('leaderboardListContainer');
+  const btnLbRx = document.getElementById('btnLbRx');
+  const btnLbScaled = document.getElementById('btnLbScaled');
+
+  if (hoyDatePicker && !hoyDatePicker.value) {
+    hoyDatePicker.value = todayStr;
+  }
+  if (hoyDatePicker) {
+    hoyDatePicker.addEventListener('change', () => {
+      loadDailyWod();
+      loadDailyLeaderboard();
+    });
+  }
+  if (btnOpenTimerFromHoy) {
+    btnOpenTimerFromHoy.addEventListener('click', () => switchPwaTab('reloj'));
+  }
+
+  async function loadDailyWod() {
+    if (!hoyWodBlocksContainer) return;
+    const fecha = (hoyDatePicker && hoyDatePicker.value) || todayStr;
+    const ath = (activePwaSession && activePwaSession.atleta) || (athleteSelect ? athleteSelect.value : '');
+    hoyWodBlocksContainer.innerHTML = '<div class="hoy-loading-msg">Calculando bloques y pesos %1RM...</div>';
+
+    try {
+      const url = `${currentScriptUrl}?action=getDailyWod&fecha=${encodeURIComponent(fecha)}&atleta=${encodeURIComponent(ath)}`;
+      const resp = await fetch(url, { method: 'GET', mode: 'cors' });
+      const data = await resp.json();
+
+      if (hoyDateSubtitle) {
+        const shown = data.fechaMostrada || fecha;
+        hoyDateSubtitle.textContent = data.isFallbackDate
+          ? `Mostrando última sesión publicada (${shown}) · Pesos para ${ath || 'Atleta'}`
+          : `Sesión oficial ${shown} · Pesos calculados para ${ath || 'Atleta'}`;
+      }
+
+      const bloques = (data && Array.isArray(data.bloques)) ? data.bloques : [];
+      if (bloques.length === 0) {
+        hoyWodBlocksContainer.innerHTML = '<div class="hoy-loading-msg">Aún no hay programación publicada para esta fecha.</div>';
+        return;
+      }
+
+      hoyWodBlocksContainer.innerHTML = '';
+      bloques.forEach(b => {
+        let weightPillHtml = '';
+        if (b.porcentaje1RM > 0) {
+          if (b.pesoCalculadoKg > 0) {
+            weightPillHtml = `<span class="hoy-weight-pill">🎯 ${b.porcentaje1RM}% → ${b.pesoCalculadoKg} kg (1RM: ${b.rmReferenciaKg} kg)</span>`;
+          } else {
+            weightPillHtml = `<span class="hoy-weight-pill no-rm">⚡ ${b.porcentaje1RM}% 1RM · Sin marca base (usar Epley)</span>`;
+          }
+        }
+        const card = document.createElement('div');
+        card.className = 'hoy-block-card';
+        card.innerHTML = `
+          <div class="hoy-block-top">
+            <span class="hoy-block-tag">${b.bloque || 'Bloque ' + b.orden}</span>
+            ${weightPillHtml}
+          </div>
+          <h4 class="hoy-block-ex">${b.ejercicio}</h4>
+          <p class="hoy-block-scheme">${b.esquema}</p>
+          ${b.notas ? `<p class="hoy-block-notes">💡 ${b.notas}</p>` : ''}
+        `;
+        hoyWodBlocksContainer.appendChild(card);
+      });
+    } catch (err) {
+      hoyWodBlocksContainer.innerHTML = '<div class="hoy-loading-msg">Sin conexión para cargar el WOD del día.</div>';
+    }
+  }
+
+  function renderLeaderboardList() {
+    if (!leaderboardListContainer) return;
+    const list = cachedLeaderboardData[activeLeaderboardLevel] || [];
+    if (list.length === 0) {
+      leaderboardListContainer.innerHTML = `<div class="hoy-loading-msg">Sin resultados ${activeLeaderboardLevel.toUpperCase()} registrados en esta fecha aún.</div>`;
+      return;
+    }
+    leaderboardListContainer.innerHTML = '';
+    list.forEach((item, i) => {
+      const medal = i === 0 ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : `#${i + 1}`));
+      const row = document.createElement('div');
+      row.className = 'lb-row';
+      row.innerHTML = `
+        <div class="lb-left">
+          <span class="lb-rank">${medal}</span>
+          <div>
+            <div class="lb-ath">${item.atleta}</div>
+            <div class="lb-ej">${item.ejercicio}</div>
+          </div>
+        </div>
+        <div class="lb-score">${item.resultado}</div>
+      `;
+      leaderboardListContainer.appendChild(row);
+    });
+  }
+
+  async function loadDailyLeaderboard() {
+    if (!leaderboardListContainer) return;
+    const fecha = (hoyDatePicker && hoyDatePicker.value) || todayStr;
+    try {
+      const url = `${currentScriptUrl}?action=getDailyLeaderboard&fecha=${encodeURIComponent(fecha)}`;
+      const resp = await fetch(url, { method: 'GET', mode: 'cors' });
+      const data = await resp.json();
+      cachedLeaderboardData = {
+        rx: (data && Array.isArray(data.rx)) ? data.rx : [],
+        scaled: (data && Array.isArray(data.scaled)) ? data.scaled : []
+      };
+      if (leaderboardDateSubtitle && data && data.fechaMostrada) {
+        leaderboardDateSubtitle.textContent = data.isFallbackDate
+          ? `Última jornada activa (${data.fechaMostrada}) · Privacidad Wellness protegida`
+          : `Resultados del ${data.fechaMostrada} · Privacidad Wellness protegida`;
+      }
+      renderLeaderboardList();
+    } catch (_) {
+      leaderboardListContainer.innerHTML = '<div class="hoy-loading-msg">Leaderboard no disponible offline.</div>';
+    }
+  }
+
+  if (btnLbRx && btnLbScaled) {
+    btnLbRx.addEventListener('click', () => {
+      activeLeaderboardLevel = 'rx';
+      btnLbRx.classList.add('active');
+      btnLbScaled.classList.remove('active');
+      renderLeaderboardList();
+    });
+    btnLbScaled.addEventListener('click', () => {
+      activeLeaderboardLevel = 'scaled';
+      btnLbScaled.classList.add('active');
+      btnLbRx.classList.remove('active');
+      renderLeaderboardList();
+    });
+  }
+
+  // --- 5. TAB 2: RELOJ WOD INTEGRADO (WEB AUDIO API + TRANSFERENCIA 2 TOQUES) ---
+  const timerModeBtns = document.querySelectorAll('.timer-mode-btn');
+  const timerMinutesInput = document.getElementById('timerMinutesInput');
+  const timerEmomIntervalWrap = document.getElementById('timerEmomIntervalWrap');
+  const timerIntervalSecInput = document.getElementById('timerIntervalSecInput');
+  const timerDisplayBox = document.getElementById('timerDisplayBox');
+  const timerPhaseBadge = document.getElementById('timerPhaseBadge');
+  const timerDigits = document.getElementById('timerDigits');
+  const timerRoundIndicator = document.getElementById('timerRoundIndicator');
+  const btnTimerStartPause = document.getElementById('btnTimerStartPause');
+  const btnTimerReset = document.getElementById('btnTimerReset');
+  const btnTimerToRegister = document.getElementById('btnTimerToRegister');
+
+  let timerMode = 'fortime';
+  let timerState = 'idle'; // idle | countdown | running | paused | done
+  let timerIntervalId = null;
+  let countdownSec = 3;
+  let elapsedSec = 0;
+  let totalTargetSec = 720;
+
+  function playBeep(freq = 880, duration = 0.14) {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.22, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration);
+    } catch (_) { }
+  }
+
+  function formatMMSS(sec) {
+    const safe = Math.max(0, Math.floor(sec));
+    const m = Math.floor(safe / 60);
+    const s = safe % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  function updateTimerUI() {
+    if (!timerDigits) return;
+    if (timerState === 'countdown') {
+      timerDigits.textContent = `00:0${countdownSec}`;
+      if (timerPhaseBadge) timerPhaseBadge.textContent = 'PREPÁRATE...';
+      if (timerDisplayBox) timerDisplayBox.classList.add('countdown-alert');
+      return;
+    }
+
+    if (timerDisplayBox) timerDisplayBox.classList.remove('countdown-alert');
+
+    if (timerMode === 'fortime') {
+      timerDigits.textContent = formatMMSS(elapsedSec);
+      if (timerPhaseBadge) timerPhaseBadge.textContent = `${timerState.toUpperCase()} · FOR TIME (CAP ${Math.round(totalTargetSec / 60)}')`;
+      if (timerRoundIndicator) timerRoundIndicator.style.display = 'none';
+    } else if (timerMode === 'amrap') {
+      const rem = Math.max(0, totalTargetSec - elapsedSec);
+      timerDigits.textContent = formatMMSS(rem);
+      if (timerPhaseBadge) timerPhaseBadge.textContent = `${timerState.toUpperCase()} · AMRAP`;
+      if (timerRoundIndicator) timerRoundIndicator.style.display = 'none';
+      if (rem <= 3 && rem > 0 && timerState === 'running' && timerDisplayBox) {
+        timerDisplayBox.classList.add('countdown-alert');
+      }
+    } else if (timerMode === 'emom') {
+      const intervalSec = Math.max(15, parseInt(timerIntervalSecInput ? timerIntervalSecInput.value : 60, 10) || 60);
+      const totalRounds = Math.max(1, Math.floor(totalTargetSec / intervalSec));
+      const curRound = Math.min(totalRounds, Math.floor(elapsedSec / intervalSec) + 1);
+      const secInRound = intervalSec - (elapsedSec % intervalSec);
+      timerDigits.textContent = formatMMSS(secInRound === intervalSec && elapsedSec > 0 ? 0 : secInRound);
+      if (timerPhaseBadge) timerPhaseBadge.textContent = `${timerState.toUpperCase()} · EMOM`;
+      if (timerRoundIndicator) {
+        timerRoundIndicator.style.display = 'block';
+        timerRoundIndicator.textContent = `Ronda ${curRound} / ${totalRounds}`;
+      }
+      if (secInRound <= 3 && secInRound > 0 && timerState === 'running' && timerDisplayBox) {
+        timerDisplayBox.classList.add('countdown-alert');
+      }
+    }
+  }
+
+  function resetWodTimer() {
+    if (timerIntervalId) clearInterval(timerIntervalId);
+    timerIntervalId = null;
+    timerState = 'idle';
+    elapsedSec = 0;
+    const mins = Math.max(1, parseInt(timerMinutesInput ? timerMinutesInput.value : 12, 10) || 12);
+    totalTargetSec = mins * 60;
+    if (btnTimerStartPause) btnTimerStartPause.textContent = '▶ Iniciar (3-2-1)';
+    updateTimerUI();
+  }
+
+  function tickWodTimer() {
+    if (timerState === 'countdown') {
+      countdownSec--;
+      if (countdownSec > 0) {
+        playBeep(700, 0.12);
+      } else {
+        playBeep(1150, 0.28);
+        timerState = 'running';
+      }
+      updateTimerUI();
+      return;
+    }
+
+    if (timerState !== 'running') return;
+    elapsedSec++;
+
+    const remaining = totalTargetSec - elapsedSec;
+    if (timerMode === 'emom') {
+      const intervalSec = Math.max(15, parseInt(timerIntervalSecInput ? timerIntervalSecInput.value : 60, 10) || 60);
+      const secInRound = intervalSec - (elapsedSec % intervalSec);
+      if (secInRound <= 3 && secInRound > 0) playBeep(750, 0.1);
+      if (elapsedSec % intervalSec === 0 && remaining > 0) playBeep(1100, 0.22);
+    } else if (remaining <= 3 && remaining > 0) {
+      playBeep(750, 0.12);
+    }
+
+    if (elapsedSec >= totalTargetSec) {
+      playBeep(1300, 0.4);
+      clearInterval(timerIntervalId);
+      timerIntervalId = null;
+      timerState = 'done';
+      if (btnTimerStartPause) btnTimerStartPause.textContent = '🏁 Completado';
+    }
+    updateTimerUI();
+  }
+
+  timerModeBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      timerModeBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      timerMode = btn.getAttribute('data-mode');
+      if (timerEmomIntervalWrap) {
+        timerEmomIntervalWrap.style.display = timerMode === 'emom' ? 'flex' : 'none';
+      }
+      resetWodTimer();
+    });
+  });
+
+  if (timerMinutesInput) timerMinutesInput.addEventListener('change', resetWodTimer);
+  if (btnTimerReset) btnTimerReset.addEventListener('click', resetWodTimer);
+
+  if (btnTimerStartPause) {
+    btnTimerStartPause.addEventListener('click', () => {
+      if (timerState === 'idle' || timerState === 'done') {
+        const mins = Math.max(1, parseInt(timerMinutesInput ? timerMinutesInput.value : 12, 10) || 12);
+        totalTargetSec = mins * 60;
+        elapsedSec = 0;
+        countdownSec = 3;
+        timerState = 'countdown';
+        playBeep(700, 0.12);
+        btnTimerStartPause.textContent = '⏸ Pausar';
+        updateTimerUI();
+        timerIntervalId = setInterval(tickWodTimer, 1000);
+      } else if (timerState === 'running' || timerState === 'countdown') {
+        clearInterval(timerIntervalId);
+        timerIntervalId = null;
+        timerState = 'paused';
+        btnTimerStartPause.textContent = '▶ Reanudar';
+        updateTimerUI();
+      } else if (timerState === 'paused') {
+        timerState = 'running';
+        btnTimerStartPause.textContent = '⏸ Pausar';
+        timerIntervalId = setInterval(tickWodTimer, 1000);
+      }
+    });
+  }
+
+  if (btnTimerToRegister) {
+    btnTimerToRegister.addEventListener('click', () => {
+      if (timerIntervalId) {
+        clearInterval(timerIntervalId);
+        timerIntervalId = null;
+      }
+      const capturedTime = formatMMSS(elapsedSec > 0 ? elapsedSec : totalTargetSec);
+      timerState = 'paused';
+      if (btnTimerStartPause) btnTimerStartPause.textContent = '▶ Reanudar';
+
+      activeRegistrarSub = 'wod';
+      switchPwaTab('registrar');
+
+      if (wodCategory) {
+        wodCategory.value = 'Metcon / WOD';
+        wodCategory.dispatchEvent(new Event('change'));
+      }
+      if (wodTipoWod) {
+        if (timerMode === 'amrap') wodTipoWod.value = 'AMRAP';
+        else if (timerMode === 'emom') wodTipoWod.value = 'EMOM';
+        else wodTipoWod.value = 'Por Tiempo (For Time)';
+        wodTipoWod.dispatchEvent(new Event('change'));
+      }
+      if (wodDuration) {
+        wodDuration.value = capturedTime;
+      }
+      showToast(`⏱️ Tiempo ${capturedTime} transferido al registro Metcon`, 'success');
+    });
+  }
+  resetWodTimer();
+
+  // --- 6. TAB 4: RACHA DE CONSTANCIA (42 DÍAS) + CAMBIO DE PIN ---
+  function renderConsistencyStreak(activityDates) {
+    const grid = document.getElementById('streakHeatmapGrid');
+    const badge = document.getElementById('streakCounterBadge');
+    if (!grid) return;
+
+    const activeSet = new Set(Array.isArray(activityDates) ? activityDates : []);
+    grid.innerHTML = '';
+
+    const today = new Date();
+    const days = [];
+    for (let i = 41; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      days.push(iso);
+    }
+
+    let totalActive42 = 0;
+    days.forEach((iso, idx) => {
+      const cell = document.createElement('div');
+      const isActive = activeSet.has(iso);
+      if (isActive) totalActive42++;
+      cell.className = `streak-cell${isActive ? ' active-day' : ''}${idx === 41 ? ' today-cell' : ''}`;
+      cell.title = `${iso}${isActive ? ' · Entrenamiento registrado' : ' · Sin registro'}`;
+      grid.appendChild(cell);
+    });
+
+    if (badge) {
+      badge.textContent = `🔥 ${totalActive42} días activos`;
+    }
+  }
+
+  const formUpdatePin = document.getElementById('formUpdatePin');
+  const currentPinInput = document.getElementById('currentPinInput');
+  const newPinInput = document.getElementById('newPinInput');
+  const btnSaveNewPin = document.getElementById('btnSaveNewPin');
+
+  if (formUpdatePin) {
+    formUpdatePin.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!activePwaSession) return;
+      const pinActual = (currentPinInput ? currentPinInput.value : '').trim();
+      const pinNuevo = (newPinInput ? newPinInput.value : '').trim();
+
+      if (!/^\d{4}$/.test(pinNuevo)) {
+        showToast('El nuevo PIN debe tener exactamente 4 dígitos numéricos.', 'error');
+        return;
+      }
+
+      if (btnSaveNewPin) {
+        btnSaveNewPin.disabled = true;
+        btnSaveNewPin.textContent = 'Guardando...';
+      }
+
+      try {
+        const resp = await fetch(currentScriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            type: 'updatePin',
+            usuario: activePwaSession.usuario,
+            atleta: activePwaSession.atleta,
+            pinActual: pinActual,
+            pinNuevo: pinNuevo
+          })
+        });
+        const res = await resp.json();
+        if (res && res.status === 'ok') {
+          showToast('🔐 PIN actualizado correctamente.', 'success');
+          if (currentPinInput) currentPinInput.value = '';
+          if (newPinInput) newPinInput.value = '';
+        } else {
+          showToast((res && res.message) || 'No se pudo actualizar el PIN.', 'error');
+        }
+      } catch (_) {
+        showToast('Error de conexión al actualizar PIN.', 'error');
+      } finally {
+        if (btnSaveNewPin) {
+          btnSaveNewPin.disabled = false;
+          btnSaveNewPin.textContent = 'Actualizar PIN';
+        }
+      }
+    });
+  }
+
+  // --- 7. MODAL COACH "+ PUBLICAR WOD" + PARSER WHATSAPP (<dialog> NATIVO) ---
+  const coachWodModal = document.getElementById('coachWodModal');
+  const coachWodDate = document.getElementById('coachWodDate');
+  const coachWodProgram = document.getElementById('coachWodProgram');
+  const whatsappWodInput = document.getElementById('whatsappWodInput');
+  const btnParseWhatsappWod = document.getElementById('btnParseWhatsappWod');
+  const btnAddManualBlock = document.getElementById('btnAddManualBlock');
+  const coachDraftBlocks = document.getElementById('coachDraftBlocks');
+  const btnCloseCoachWod = document.getElementById('btnCloseCoachWod');
+  const btnCancelCoachWod = document.getElementById('btnCancelCoachWod');
+  const btnPublishCoachWod = document.getElementById('btnPublishCoachWod');
+
+  // Fallback de light-dismiss para navegadores sin closedBy nativo (Modern Web Guidance)
+  if (coachWodModal && !('closedBy' in HTMLDialogElement.prototype)) {
+    const isOutsideDialog = (ev, dlg) => {
+      const r = dlg.getBoundingClientRect();
+      return ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom;
+    };
+    let pressedOutside = false;
+    coachWodModal.addEventListener('pointerdown', (ev) => { pressedOutside = isOutsideDialog(ev, coachWodModal); });
+    coachWodModal.addEventListener('pointerup', (ev) => {
+      if (pressedOutside && isOutsideDialog(ev, coachWodModal)) coachWodModal.close();
+    });
+  }
+
+  function addDraftBlockRow(data = {}) {
+    if (!coachDraftBlocks) return;
+    const idx = coachDraftBlocks.children.length + 1;
+    const div = document.createElement('div');
+    div.className = 'draft-block-item';
+    div.innerHTML = `
+      <input type="text" class="draft-bloque" placeholder="Bloque (ej. A. Fuerza)" value="${(data.bloque || `Bloque ${idx}`).replace(/"/g, '&quot;')}">
+      <input type="text" class="draft-ejercicio" placeholder="Ejercicio (ej. Back Squat)" value="${(data.ejercicio || '').replace(/"/g, '&quot;')}">
+      <input type="number" class="draft-pct" min="0" max="120" step="1" placeholder="% 1RM" value="${data.porcentaje || 0}">
+      <button type="button" class="btn-remove-draft" title="Eliminar bloque">&times;</button>
+      <input type="text" class="draft-esquema draft-full" placeholder="Esquema Sets/Reps (ej. 5 x 5)" value="${(data.esquema || '').replace(/"/g, '&quot;')}">
+      <input type="text" class="draft-notas draft-full" placeholder="Notas del Coach (opcional)" value="${(data.notas || '').replace(/"/g, '&quot;')}">
+    `;
+    div.querySelector('.btn-remove-draft').addEventListener('click', () => div.remove());
+    coachDraftBlocks.appendChild(div);
+  }
+
+  function parseWhatsappWodText(rawText) {
+    const lines = String(rawText || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const parsed = [];
+    lines.forEach((line, idx) => {
+      // Detectar prefijo A), B), C), A., 1)
+      let bloqueLabel = `Bloque ${idx + 1}`;
+      let rest = line;
+      const mPref = line.match(/^([A-Za-z0-9]+)[\)\.\-\:]\s*(.+)$/);
+      if (mPref) {
+        bloqueLabel = `Bloque ${mPref[1].toUpperCase()}`;
+        rest = mPref[2].trim();
+      }
+
+      // Detectar porcentaje (@ 75% o 75% 1RM)
+      let pct = 0;
+      const mPct = rest.match(/@?\s*(\d{2,3})\s*%/);
+      if (mPct) {
+        pct = parseInt(mPct[1], 10) || 0;
+      }
+
+      // Separar notas después de ' - '
+      let notas = '';
+      const dashParts = rest.split(/\s+-\s+/);
+      if (dashParts.length > 1) {
+        rest = dashParts[0].trim();
+        notas = dashParts.slice(1).join(' - ').trim();
+      }
+
+      // Separar ejercicio y esquema (ej. "Back Squat 5x5 @ 75%")
+      let ejercicio = rest.replace(/@?\s*\d{2,3}\s*%(?:\s*1RM)?/i, '').trim();
+      let esquema = rest;
+      const mSets = ejercicio.match(/^(.*?)\s+(\d+\s*[xX×]\s*\d+.*)$/);
+      if (mSets) {
+        ejercicio = mSets[1].trim();
+        esquema = mSets[2].trim();
+      }
+
+      parsed.push({ bloque: bloqueLabel, ejercicio: ejercicio || rest, esquema: esquema, porcentaje: pct, notas: notas });
+    });
+    return parsed;
+  }
+
+  if (btnOpenCoachWod && coachWodModal) {
+    btnOpenCoachWod.addEventListener('click', () => {
+      if (coachWodDate) coachWodDate.value = (hoyDatePicker && hoyDatePicker.value) || todayStr;
+      if (coachDraftBlocks && coachDraftBlocks.children.length === 0) {
+        addDraftBlockRow({ bloque: 'A. Fuerza', ejercicio: 'Back Squat', esquema: '5 x 5', porcentaje: 75 });
+      }
+      coachWodModal.showModal();
+    });
+  }
+  if (btnCloseCoachWod && coachWodModal) btnCloseCoachWod.addEventListener('click', () => coachWodModal.close());
+  if (btnCancelCoachWod && coachWodModal) btnCancelCoachWod.addEventListener('click', () => coachWodModal.close());
+  if (btnAddManualBlock) btnAddManualBlock.addEventListener('click', () => addDraftBlockRow());
+
+  if (btnParseWhatsappWod) {
+    btnParseWhatsappWod.addEventListener('click', () => {
+      const parsed = parseWhatsappWodText(whatsappWodInput ? whatsappWodInput.value : '');
+      if (parsed.length === 0) {
+        showToast('Pega al menos una línea (ej. A) Back Squat 5x5 @ 75%)', 'error');
+        return;
+      }
+      if (coachDraftBlocks) coachDraftBlocks.innerHTML = '';
+      parsed.forEach(b => addDraftBlockRow(b));
+      showToast(`⚡ ${parsed.length} bloques parseados en borrador editable`, 'success');
+    });
+  }
+
+  if (btnPublishCoachWod) {
+    btnPublishCoachWod.addEventListener('click', async () => {
+      if (!activePwaSession || String(activePwaSession.rol).toLowerCase() !== 'coach') return;
+      const items = Array.from(coachDraftBlocks ? coachDraftBlocks.querySelectorAll('.draft-block-item') : []);
+      const bloques = items.map((el, i) => ({
+        bloque: el.querySelector('.draft-bloque').value.trim(),
+        orden: i + 1,
+        ejercicio: el.querySelector('.draft-ejercicio').value.trim(),
+        esquema: el.querySelector('.draft-esquema').value.trim(),
+        porcentaje: parseFloat(el.querySelector('.draft-pct').value) || 0,
+        notas: el.querySelector('.draft-notas').value.trim()
+      })).filter(b => b.ejercicio || b.esquema);
+
+      if (bloques.length === 0) {
+        showToast('Agrega al menos un bloque válido antes de publicar.', 'error');
+        return;
+      }
+
+      btnPublishCoachWod.disabled = true;
+      btnPublishCoachWod.textContent = 'Publicando...';
+      try {
+        const resp = await fetch(currentScriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            type: 'publishDailyWod',
+            rol: activePwaSession.rol,
+            atleta: activePwaSession.atleta,
+            fecha: (coachWodDate && coachWodDate.value) || todayStr,
+            programa: (coachWodProgram && coachWodProgram.value.trim()) || 'Atenea',
+            ciclo: localStorage.getItem('kleos_active_cycle') || 'Atenea',
+            semana: parseInt(localStorage.getItem('kleos_current_week'), 10) || 2,
+            bloques: bloques
+          })
+        });
+        const res = await resp.json();
+        if (res && res.status === 'ok') {
+          showToast(`🚀 WOD publicado (${bloques.length} bloques) en Programacion_Diaria`, 'success');
+          if (coachWodModal) coachWodModal.close();
+          if (hoyDatePicker && coachWodDate) hoyDatePicker.value = coachWodDate.value;
+          loadDailyWod();
+        } else {
+          showToast((res && res.message) || 'Error publicando programación.', 'error');
+        }
+      } catch (_) {
+        showToast('Error de red al publicar WOD.', 'error');
+      } finally {
+        btnPublishCoachWod.disabled = false;
+        btnPublishCoachWod.textContent = '🚀 Publicar WOD';
+      }
+    });
+  }
+
+  // --- INICIALIZACIÓN DE SESIÓN PWA ---
+  try {
+    const savedSessionRaw = localStorage.getItem(SESSION_KEY);
+    if (savedSessionRaw) {
+      const parsedSess = JSON.parse(savedSessionRaw);
+      if (parsedSess && parsedSess.atleta) {
+        applySessionPrivacyLock(parsedSess);
+      } else {
+        applySessionPrivacyLock(null);
+      }
+    } else {
+      applySessionPrivacyLock(null);
+    }
+  } catch (_) {
+    applySessionPrivacyLock(null);
   }
 });
 // Atajo de teclado de emergencia para abrir la configuración (Ctrl + Q)
