@@ -4178,7 +4178,7 @@ function parseWodWithAI(ss, rawText) {
     "4. Mantén 'orden' secuencial desde 1 hasta N (ej. 1..6).\n\n" +
     "PROGRAMACIÓN A PROCESAR:\n" + text;
 
-  var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + encodeURIComponent(apiKey);
+  var modelsToTry = ["gemini-3.8-flash", "gemini-2.5-flash"];
   var payload = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
@@ -4188,15 +4188,21 @@ function parseWodWithAI(ss, rawText) {
   };
 
   try {
-    var resp = UrlFetchApp.fetch(url, {
-      method: "post",
-      contentType: "application/json",
-      payload: JSON.stringify(payload),
-      muteHttpExceptions: true
-    });
+    var code = 0;
+    var bodyText = "";
+    for (var mIdx = 0; mIdx < modelsToTry.length; mIdx++) {
+      var url = "https://generativelanguage.googleapis.com/v1beta/models/" + modelsToTry[mIdx] + ":generateContent?key=" + encodeURIComponent(apiKey);
+      var resp = UrlFetchApp.fetch(url, {
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true
+      });
+      code = resp.getResponseCode();
+      bodyText = resp.getContentText();
+      if (code === 200) break;
+    }
 
-    var code = resp.getResponseCode();
-    var bodyText = resp.getContentText();
     if (code !== 200) {
       logScriptEvent(ss, "PARSE_WOD_AI_ERR", "Coach", 0, "ERROR", "HTTP " + code + " | " + bodyText.substring(0, 300));
       return { status: "error", message: "Gemini API error HTTP " + code + ": " + bodyText.substring(0, 200) };
