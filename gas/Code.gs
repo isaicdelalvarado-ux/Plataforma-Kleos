@@ -4178,7 +4178,7 @@ function parseWodWithAI(ss, rawText) {
     "4. Mantén 'orden' secuencial desde 1 hasta N (ej. 1..6).\n\n" +
     "PROGRAMACIÓN A PROCESAR:\n" + text;
 
-  var modelsToTry = ["gemini-flash-latest", "gemini-3-flash-preview", "gemini-3.1-flash-lite"];
+  var modelsToTry = ["gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-flash-latest"];
   var payload = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
