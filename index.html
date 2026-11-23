@@ -39,7 +39,7 @@
   <!-- Canvas Confetti para Celebración Épica de Récords Personales (PR) -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
 
-  <link rel="stylesheet" href="css/styles.css?v=3.2">
+  <link rel="stylesheet" href="css/styles.css?v=3.3">
 </head>
 <body>
   <!-- Fondo cinemático del Partenón con velo oscuro -->
@@ -1310,9 +1310,15 @@
           <label for="whatsappWodInput" id="lblWhatsappDay">📋 Pegar WOD desde WhatsApp · Día seleccionado (Auto-Parser A), B), C) y @ %1RM)</label>
           <textarea id="whatsappWodInput" rows="3" placeholder="Ej:&#10;A) Back Squat 5x5 @ 75% - Tempo controlado&#10;B) Pull Ups 4x8 - Progresión estricta o kipping&#10;C) Metcon AMRAP 12': 10 Thrusters + 10 T2B + 200m Run"></textarea>
           <div class="whatsapp-parser-actions">
-            <button type="button" id="btnParseWhatsappWod" class="btn-secondary">⚡ Parsear al Día Actual</button>
+            <button type="button" id="btnParseWhatsappWod" class="btn-primary">🤖 Procesar con IA (Gemini 2.5)</button>
             <button type="button" id="btnAddManualBlock" class="btn-secondary">+ Agregar Bloque Manual</button>
           </div>
+        </div>
+
+        <!-- VISTA PREVIA DUAL IA (ATENEA VS ATENEA_COMP5) -->
+        <div id="aiDualPreviewBar" class="ai-dual-preview-bar" style="display: none;" role="tablist">
+          <button type="button" id="btnPreviewAtenea" class="ai-preview-tab active" data-prog="Atenea">⚡ Vista Atenea (<span id="cntPrevAtenea">0</span>)</button>
+          <button type="button" id="btnPreviewComp5" class="ai-preview-tab" data-prog="Atenea_Comp5">🏆 Vista Atenea_Comp5 (<span id="cntPrevComp5">0</span>)</button>
         </div>
 
         <!-- BORRADOR EDITABLE DE BLOQUES DEL DÍA ACTIVO -->
@@ -1357,6 +1363,6 @@
   <!-- TOAST NOTIFICATIONS -->
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="js/app.js?v=3.2"></script>
+  <script src="js/app.js?v=3.3"></script>
 </body>
 </html>

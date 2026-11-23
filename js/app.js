@@ -3458,7 +3458,45 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const WEEKDAY_NAMES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
   let weeklyDrafts = [[], [], [], [], [], []];
+  let weeklyDraftsByProgram = {
+    Atenea: [[], [], [], [], [], []],
+    Atenea_Comp5: [[], [], [], [], [], []]
+  };
+  let aiDualModeActive = false;
+  let activePreviewProgram = 'Atenea';
   let activeCoachDay = 0;
+
+  const aiDualPreviewBar = document.getElementById('aiDualPreviewBar');
+  const btnPreviewAtenea = document.getElementById('btnPreviewAtenea');
+  const btnPreviewComp5 = document.getElementById('btnPreviewComp5');
+  const cntPrevAtenea = document.getElementById('cntPrevAtenea');
+  const cntPrevComp5 = document.getElementById('cntPrevComp5');
+
+  function updateDualPreviewUI() {
+    if (!aiDualPreviewBar) return;
+    if (!aiDualModeActive) {
+      aiDualPreviewBar.style.display = 'none';
+      return;
+    }
+    aiDualPreviewBar.style.display = 'grid';
+    if (cntPrevAtenea) cntPrevAtenea.textContent = String((weeklyDraftsByProgram.Atenea[activeCoachDay] || []).length);
+    if (cntPrevComp5) cntPrevComp5.textContent = String((weeklyDraftsByProgram.Atenea_Comp5[activeCoachDay] || []).length);
+    if (btnPreviewAtenea) btnPreviewAtenea.classList.toggle('active', activePreviewProgram === 'Atenea');
+    if (btnPreviewComp5) btnPreviewComp5.classList.toggle('active', activePreviewProgram === 'Atenea_Comp5');
+  }
+
+  function switchDualPreviewProgram(prog) {
+    if (!aiDualModeActive) return;
+    weeklyDraftsByProgram[activePreviewProgram][activeCoachDay] = readCurrentDayDraftFromDom();
+    activePreviewProgram = prog;
+    weeklyDrafts = weeklyDraftsByProgram[activePreviewProgram];
+    if (coachWodProgram) coachWodProgram.value = activePreviewProgram;
+    renderActiveCoachDayBlocks();
+    updateDualPreviewUI();
+  }
+
+  if (btnPreviewAtenea) btnPreviewAtenea.addEventListener('click', () => switchDualPreviewProgram('Atenea'));
+  if (btnPreviewComp5) btnPreviewComp5.addEventListener('click', () => switchDualPreviewProgram('Atenea_Comp5'));
 
   // Fallback de light-dismiss para navegadores sin closedBy nativo (Modern Web Guidance)
   if (coachWodModal && !('closedBy' in HTMLDialogElement.prototype)) {
@@ -3725,63 +3763,125 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (btnParseWhatsappWod) {
-    btnParseWhatsappWod.addEventListener('click', () => {
-      const parsed = parseWhatsappWodText(whatsappWodInput ? whatsappWodInput.value : '');
-      if (parsed.length === 0) {
-        showToast('Pega al menos una línea (ej. A) Back Squat 5x5 @ 75%)', 'error');
+    btnParseWhatsappWod.addEventListener('click', async () => {
+      const rawText = (whatsappWodInput ? whatsappWodInput.value : '').trim();
+      if (!rawText) {
+        showToast('Pega la programación de WhatsApp antes de procesar con IA.', 'error');
         return;
       }
-      weeklyDrafts[activeCoachDay] = parsed;
-      renderActiveCoachDayBlocks();
-      if (whatsappWodInput) whatsappWodInput.value = '';
-      showToast(`⚡ ${parsed.length} bloques cargados en ${WEEKDAY_NAMES[activeCoachDay]}`, 'success');
+
+      btnParseWhatsappWod.disabled = true;
+      btnParseWhatsappWod.textContent = '🤖 Procesando con Gemini 2.5...';
+      try {
+        const resp = await fetch(currentScriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            type: 'parseWodWithAI',
+            rawText: rawText
+          })
+        });
+        const res = await resp.json();
+        if (res && res.status === 'ok' && Array.isArray(res.atenea) && res.atenea.length > 0) {
+          if (res.hasDualPrograms && Array.isArray(res.atenea_comp5) && res.atenea_comp5.length > 0) {
+            aiDualModeActive = true;
+            weeklyDraftsByProgram.Atenea[activeCoachDay] = res.atenea;
+            weeklyDraftsByProgram.Atenea_Comp5[activeCoachDay] = res.atenea_comp5;
+            activePreviewProgram = 'Atenea';
+            weeklyDrafts = weeklyDraftsByProgram.Atenea;
+            if (coachWodProgram) coachWodProgram.value = 'Atenea';
+            renderActiveCoachDayBlocks();
+            updateDualPreviewUI();
+            showToast(`🤖 IA separó ${res.atenea.length} bloques (Atenea) y ${res.atenea_comp5.length} (Atenea_Comp5). Revisa ambas pestañas antes de guardar.`, 'success');
+          } else {
+            aiDualModeActive = false;
+            weeklyDrafts[activeCoachDay] = res.atenea;
+            renderActiveCoachDayBlocks();
+            updateDualPreviewUI();
+            showToast(`🤖 IA estructuró ${res.atenea.length} bloques limpios en ${WEEKDAY_NAMES[activeCoachDay]}`, 'success');
+          }
+        } else {
+          // Fallback local si IA reporta error
+          const parsed = parseWhatsappWodText(rawText);
+          weeklyDrafts[activeCoachDay] = parsed;
+          renderActiveCoachDayBlocks();
+          showToast((res && res.message) || 'Procesado con parser local de respaldo.', 'error');
+        }
+      } catch (_) {
+        const parsed = parseWhatsappWodText(rawText);
+        weeklyDrafts[activeCoachDay] = parsed;
+        renderActiveCoachDayBlocks();
+        showToast('Error de red con IA; aplicado parser local de respaldo.', 'error');
+      } finally {
+        btnParseWhatsappWod.disabled = false;
+        btnParseWhatsappWod.textContent = '🤖 Procesar con IA (Gemini 2.5)';
+      }
     });
   }
 
   if (btnPublishCoachWod) {
     btnPublishCoachWod.addEventListener('click', async () => {
       if (!activePwaSession || String(activePwaSession.rol).toLowerCase() !== 'coach') return;
-      weeklyDrafts[activeCoachDay] = readCurrentDayDraftFromDom();
+      if (aiDualModeActive) {
+        weeklyDraftsByProgram[activePreviewProgram][activeCoachDay] = readCurrentDayDraftFromDom();
+      } else {
+        weeklyDrafts[activeCoachDay] = readCurrentDayDraftFromDom();
+      }
 
       const startIso = (coachWodDate && coachWodDate.value) || getMondayOfDate(todayStr);
-      const diasPayload = weeklyDrafts.map((bloques, idx) => ({
-        dayIndex: idx,
-        fecha: addDaysToIso(startIso, idx),
-        bloques: bloques
-      })).filter(d => d.bloques.length > 0);
+      const programsToPublish = aiDualModeActive
+        ? ['Atenea', 'Atenea_Comp5']
+        : [((coachWodProgram && coachWodProgram.value) || 'Atenea')];
 
-      if (diasPayload.length === 0) {
+      const payloads = [];
+      programsToPublish.forEach(prog => {
+        const srcDrafts = aiDualModeActive ? weeklyDraftsByProgram[prog] : weeklyDrafts;
+        const diasPayload = srcDrafts.map((bloques, idx) => ({
+          dayIndex: idx,
+          fecha: addDaysToIso(startIso, idx),
+          bloques: bloques
+        })).filter(d => d.bloques.length > 0);
+        if (diasPayload.length > 0) {
+          payloads.push({ prog, diasPayload });
+        }
+      });
+
+      if (payloads.length === 0) {
         showToast('Agrega al menos un bloque en alguno de los 6 días antes de publicar.', 'error');
         return;
       }
 
       btnPublishCoachWod.disabled = true;
-      btnPublishCoachWod.textContent = 'Publicando semana...';
+      btnPublishCoachWod.textContent = 'Publicando...';
       try {
-        const resp = await fetch(currentScriptUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            type: 'publishWeeklyWod',
-            rol: activePwaSession.rol,
-            atleta: activePwaSession.atleta,
-            fechaInicio: startIso,
-            programa: (coachWodProgram && coachWodProgram.value) || 'Atenea',
-            ciclo: localStorage.getItem('kleos_active_cycle') || 'Atenea',
-            semana: parseInt(localStorage.getItem('kleos_current_week'), 10) || 2,
-            dias: diasPayload
-          })
-        });
-        const res = await resp.json();
-        if (res && res.status === 'ok') {
-          showToast(`🚀 ${res.message}`, 'success');
-          if (coachWodModal) coachWodModal.close();
-          loadDailyWod();
-        } else {
-          showToast((res && res.message) || 'Error publicando semana.', 'error');
+        let totalPublished = 0;
+        for (const item of payloads) {
+          const resp = await fetch(currentScriptUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              type: 'publishWeeklyWod',
+              rol: activePwaSession.rol,
+              atleta: activePwaSession.atleta,
+              fechaInicio: startIso,
+              programa: item.prog,
+              ciclo: localStorage.getItem('kleos_active_cycle') || 'Atenea',
+              semana: parseInt(localStorage.getItem('kleos_current_week'), 10) || 2,
+              dias: item.diasPayload
+            })
+          });
+          const res = await resp.json();
+          if (res && res.status === 'ok') {
+            totalPublished += (res.insertedCount || 0);
+          } else {
+            throw new Error((res && res.message) || `Error publicando ${item.prog}`);
+          }
         }
-      } catch (_) {
-        showToast('Error de red al publicar programación semanal.', 'error');
+        showToast(`🚀 Publicados ${totalPublished} bloques sin duplicados (${payloads.map(p => p.prog).join(' + ')})`, 'success');
+        if (coachWodModal) coachWodModal.close();
+        loadDailyWod();
+      } catch (err) {
+        showToast(err.message || 'Error de red al publicar programación semanal.', 'error');
       } finally {
         btnPublishCoachWod.disabled = false;
         btnPublishCoachWod.textContent = '🚀 Publicar Semana Completa (Batch)';

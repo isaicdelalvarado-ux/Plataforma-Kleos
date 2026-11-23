@@ -1418,6 +1418,27 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify(progUpdRes))
         .setMimeType(ContentService.MimeType.JSON);
     }
+    else if (data.type === "parseWodWithAI" || data.type === "parse_wod_ai" || data.action === "parseWodWithAI") {
+      var aiRes = parseWodWithAI(ss, data.rawText || data.text || data.wodText || "");
+      return ContentService.createTextOutput(JSON.stringify(aiRes))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    else if (data.type === "setGeminiApiKey" || data.action === "setGeminiApiKey") {
+      var rolKey = String(data.rol || "").trim().toLowerCase();
+      if (rolKey !== "coach") {
+        return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "Solo el Coach puede configurar GEMINI_API_KEY." }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      var newKey = String(data.apiKey || data.key || "").trim();
+      if (!newKey) {
+        return ContentService.createTextOutput(JSON.stringify({ status: "error", message: "apiKey vacía." }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      PropertiesService.getScriptProperties().setProperty("GEMINI_API_KEY", newKey);
+      logScriptEvent(ss, "CONFIG_GEMINI_KEY", data.atleta || "Coach", 0, "HEALTHY", "GEMINI_API_KEY actualizada en ScriptProperties");
+      return ContentService.createTextOutput(JSON.stringify({ status: "ok", message: "GEMINI_API_KEY guardada de forma segura en ScriptProperties." }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
     else if (data.type === "crear_informe_drive" || data.type === "informe_drive") {
       var driveRes = crearInformeSemanalEnDrive(ss);
       return sendJsonResponse(driveRes.status, driveRes.message);
@@ -3838,6 +3859,11 @@ function publishDailyWodBlocks(ss, data) {
     ]);
   }
 
+  // Eliminar filas previas de esta misma (Fecha, Programa) para evitar duplicados al republicar
+  var dedupKeys = {};
+  dedupKeys[fecha + "|" + programa.toLowerCase()] = true;
+  deleteProgramRowsByKeys(sheet, dedupKeys);
+
   var startRow = getFirstEmptyRowByColumnA(sheet);
   var endRow = startRow + rowsToWrite.length - 1;
   if (endRow >= sheet.getMaxRows()) {
@@ -3847,8 +3873,8 @@ function publishDailyWodBlocks(ss, data) {
   SpreadsheetApp.flush();
   ensureSingleCleanBottomRow(sheet, endRow);
 
-  logScriptEvent(ss, "PUBLISH_DAILY_WOD", data.atleta || "Coach", startRow, "HEALTHY", "Fecha: " + fecha + " | Bloques: " + rowsToWrite.length);
-  return { status: "ok", message: "Programación publicada exitosamente (" + rowsToWrite.length + " bloques).", insertedCount: rowsToWrite.length, fecha: fecha };
+  logScriptEvent(ss, "PUBLISH_DAILY_WOD", data.atleta || "Coach", startRow, "HEALTHY", "Fecha: " + fecha + " | Programa: " + programa + " | Bloques: " + rowsToWrite.length);
+  return { status: "ok", message: "Programación publicada exitosamente (" + rowsToWrite.length + " bloques).", insertedCount: rowsToWrite.length, fecha: fecha, programa: programa };
 }
 
 /**
@@ -4035,6 +4061,13 @@ function publishWeeklyWodBatch(ss, data) {
     return { status: "error", message: "Agrega al menos un bloque en alguno de los 6 días." };
   }
 
+  // Eliminar filas previas de cada (Fecha, Programa) incluida en esta publicación para evitar duplicados
+  var dedupKeys = {};
+  for (var dk = 0; dk < rowsToWrite.length; dk++) {
+    dedupKeys[rowsToWrite[dk][0] + "|" + String(rowsToWrite[dk][3]).toLowerCase()] = true;
+  }
+  deleteProgramRowsByKeys(sheet, dedupKeys);
+
   var startRow = getFirstEmptyRowByColumnA(sheet);
   var endRow = startRow + rowsToWrite.length - 1;
   if (endRow >= sheet.getMaxRows()) {
@@ -4062,6 +4095,158 @@ function publishWeeklyWodBatch(ss, data) {
     daysCount: activeDaysCount,
     programa: programa
   };
+}
+
+/**
+ * Elimina filas existentes en 'Programacion_Diaria' que coincidan con cualquier clave
+ * 'YYYY-MM-DD|programa_lower' (de abajo hacia arriba para no desplazar índices).
+ */
+function deleteProgramRowsByKeys(sheet, keysMap) {
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+  var lastRow = sheet.getLastRow();
+  var values = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+  var rowsToDelete = [];
+  for (var i = 0; i < values.length; i++) {
+    var fIso = normalizeDateToISO(values[i][0]);
+    var progLower = String(values[i][3] || "Atenea").trim().toLowerCase();
+    if (fIso && keysMap[fIso + "|" + progLower]) {
+      rowsToDelete.push(i + 2);
+    }
+  }
+  for (var j = rowsToDelete.length - 1; j >= 0; j--) {
+    sheet.deleteRow(rowsToDelete[j]);
+  }
+  return rowsToDelete.length;
+}
+
+/**
+ * Normaliza el nombre del ejercicio en bloques con %1RM al catálogo exacto de 'RM_Atenea'.
+ */
+function normalizeRmExerciseForWod(rawEj, pct) {
+  var ej = String(rawEj || "").trim();
+  if (!pct || Number(pct) <= 0) return ej;
+  var low = ej.toLowerCase();
+  if (low.indexOf("front squat") !== -1) return "Front Squat";
+  if (low.indexOf("back squat") !== -1) return "Back Squat";
+  if (low.indexOf("clean & jerk") !== -1 || low.indexOf("clean and jerk") !== -1) return "Clean & Jerk";
+  if (low.indexOf("squat clean") !== -1 || low.indexOf("clean squat") !== -1 || low.indexOf("clean complex") !== -1 || low.indexOf("hang clean") !== -1 || low.indexOf("power clean") !== -1 || low.indexOf("clean") !== -1) return "Clean Squat";
+  if (low.indexOf("snatch") !== -1) return "Snatch";
+  if (low.indexOf("bench press") !== -1) return "Bench Press";
+  if (low.indexOf("push press") !== -1) return "Push Press";
+  if (low.indexOf("deadlift") !== -1 || low.indexOf("peso muerto") !== -1) return "Deadlift";
+  if (low.indexOf("jerk") !== -1) return "Jerk";
+  return ej;
+}
+
+/**
+ * Interpreta una programación cruda de WhatsApp usando Gemini 2.5 Flash con JSON estricto.
+ * Agrupa exclusivamente por bloques principales (Bloque 1..6), separa 'Atenea' vs 'Atenea_Comp5'
+ * si el texto diferencia entre Grupo General y Atletas Comp 5 Dic, y normaliza ejercicios %1RM.
+ */
+function parseWodWithAI(ss, rawText) {
+  var text = String(rawText || "").trim();
+  if (!text) {
+    return { status: "error", message: "El texto de la programación está vacío." };
+  }
+
+  var apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    return { status: "error", message: "GEMINI_API_KEY no está configurada en Script Properties." };
+  }
+
+  var prompt =
+    "Eres el Arquitecto de Programación Deportiva de Plataforma Kleos (CrossFit / Halterofilia).\n" +
+    "Analiza la siguiente sesión de entrenamiento pegada desde WhatsApp y devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta:\n" +
+    "{\n" +
+    "  \"hasDualPrograms\": boolean,\n" +
+    "  \"atenea\": [\n" +
+    "    {\n" +
+    "      \"bloque\": \"Bloque 1: Título corto\",\n" +
+    "      \"orden\": 1,\n" +
+    "      \"ejercicio\": \"Nombre del ejercicio\",\n" +
+    "      \"esquema\": \"Descripción completa y limpia del bloque con todas sus sub-viñetas, partes A/B/C, pistas, series y repeticiones\",\n" +
+    "      \"porcentaje\": 0,\n" +
+    "      \"notas\": \"Notas técnicas o tiempos clave del coach\"\n" +
+    "    }\n" +
+    "  ],\n" +
+    "  \"atenea_comp5\": [ ...mismo formato... ]\n" +
+    "}\n\n" +
+    "REGLAS ESTRICTAS:\n" +
+    "1. Agrupa ÚNICAMENTE por los bloques principales (ej. Bloque 1, Bloque 2, Bloque 3, Bloque 4, Bloque 5, Bloque 6). NUNCA dividas sub-viñetas (Parte A/B/C, Pista A/B, pasos 1/2/3) en bloques separados; intégralas limpiamente dentro de 'esquema' y 'notas' de su bloque padre.\n" +
+    "2. Si el texto distingue entre 'Grupo General' y 'Atletas Comp 5 Dic' (o 'Comp 5 Dic'), establece hasDualPrograms: true y genera dos listas completas e independientes: 'atenea' (SOLO las indicaciones del Grupo General y partes comunes, sin mencionar Comp 5 Dic) y 'atenea_comp5' (SOLO las indicaciones de Atletas Comp 5 Dic y partes comunes, sin mencionar Grupo General). Si no hay distinción, pon hasDualPrograms: false y deja 'atenea_comp5' vacío [].\n" +
+    "3. En cualquier bloque que mencione un porcentaje de 1RM (ej. @ 75% 1RM, @ 72% 1RM), extrae el entero en 'porcentaje' (ej. 75, 72) y normaliza 'ejercicio' EXACTAMENTE a uno de estos nombres canónicos de RM_Atenea: Front Squat, Back Squat, Clean Squat, Clean & Jerk, Snatch, Bench Press, Push Press, Deadlift.\n" +
+    "4. Mantén 'orden' secuencial desde 1 hasta N (ej. 1..6).\n\n" +
+    "PROGRAMACIÓN A PROCESAR:\n" + text;
+
+  var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + encodeURIComponent(apiKey);
+  var payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: 0.1
+    }
+  };
+
+  try {
+    var resp = UrlFetchApp.fetch(url, {
+      method: "post",
+      contentType: "application/json",
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+
+    var code = resp.getResponseCode();
+    var bodyText = resp.getContentText();
+    if (code !== 200) {
+      logScriptEvent(ss, "PARSE_WOD_AI_ERR", "Coach", 0, "ERROR", "HTTP " + code + " | " + bodyText.substring(0, 300));
+      return { status: "error", message: "Gemini API error HTTP " + code + ": " + bodyText.substring(0, 200) };
+    }
+
+    var outer = JSON.parse(bodyText);
+    var rawJson = outer.candidates && outer.candidates[0] && outer.candidates[0].content && outer.candidates[0].content.parts && outer.candidates[0].content.parts[0]
+      ? outer.candidates[0].content.parts[0].text
+      : "";
+
+    if (!rawJson) {
+      return { status: "error", message: "Gemini devolvió una respuesta vacía." };
+    }
+
+    // Limpiar posibles fences ```json
+    rawJson = rawJson.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
+    var parsed = JSON.parse(rawJson);
+
+    var sanitizeList = function(arr) {
+      if (!Array.isArray(arr)) return [];
+      return arr.map(function(b, idx) {
+        var pct = parseInt(b.porcentaje || b.porcentaje1RM || 0, 10) || 0;
+        var ej = normalizeRmExerciseForWod(b.ejercicio || "", pct);
+        return {
+          bloque: String(b.bloque || ("Bloque " + (idx + 1))).trim(),
+          orden: parseInt(b.orden, 10) || (idx + 1),
+          ejercicio: ej,
+          esquema: String(b.esquema || "").trim(),
+          porcentaje: pct,
+          notas: String(b.notas || "").trim()
+        };
+      });
+    };
+
+    var ateneaList = sanitizeList(parsed.atenea);
+    var comp5List = sanitizeList(parsed.atenea_comp5);
+    var hasDual = !!(parsed.hasDualPrograms && comp5List.length > 0);
+
+    logScriptEvent(ss, "PARSE_WOD_AI_OK", "Coach", 0, "HEALTHY", "Atenea: " + ateneaList.length + " bloques | Comp5: " + comp5List.length + " bloques");
+
+    return {
+      status: "ok",
+      hasDualPrograms: hasDual,
+      atenea: ateneaList,
+      atenea_comp5: comp5List
+    };
+  } catch (err) {
+    logScriptEvent(ss, "PARSE_WOD_AI_ERR", "Coach", 0, "ERROR", err.toString());
+    return { status: "error", message: "Error procesando con Gemini 2.5 Flash: " + err.toString() };
+  }
 }
 
 

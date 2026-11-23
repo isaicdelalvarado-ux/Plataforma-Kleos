@@ -3718,3 +3718,31 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Barra de Vista Previa Dual IA (Atenea vs Atenea_Comp5) */
+.ai-dual-preview-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  padding: 0.35rem;
+  border-radius: 11px;
+}
+
+.ai-preview-tab {
+  border: none;
+  background: transparent;
+  color: #cbd5e1;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.ai-preview-tab.active {
+  background: rgba(16, 185, 129, 0.25);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.5);
+}
