@@ -3503,7 +3503,7 @@ function updateKleosUserPin(ss, usuario, atleta, pinActual, pinNuevo) {
 function normalizeDateToISO(val) {
   if (!val) return "";
   if (val instanceof Date) {
-    return formatDateISO(val);
+    return Utilities.formatDate(val, Session.getScriptTimeZone() || "America/Caracas", "yyyy-MM-dd");
   }
   var s = String(val).trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
@@ -3511,7 +3511,7 @@ function normalizeDateToISO(val) {
   }
   var parsed = parseDate(s);
   if (parsed && !isNaN(parsed.getTime())) {
-    return formatDateISO(parsed);
+    return Utilities.formatDate(parsed, Session.getScriptTimeZone() || "America/Caracas", "yyyy-MM-dd");
   }
   return s;
 }
@@ -3859,22 +3859,28 @@ function publishDailyWodBlocks(ss, data) {
     ]);
   }
 
-  // Eliminar filas previas de esta misma (Fecha, Programa) para evitar duplicados al republicar
+  // Eliminar filas previas de esta misma (Fecha, Programa) y de fechaOriginal si el Coach cambió la fecha
   var dedupKeys = {};
   dedupKeys[fecha + "|" + programa.toLowerCase()] = true;
-  deleteProgramRowsByKeys(sheet, dedupKeys);
+  var fechaOrig = normalizeDateToISO(data.fechaOriginal || data.originalDate || "");
+  var progOrig = String(data.programaOriginal || programa).trim().toLowerCase();
+  if (fechaOrig) {
+    dedupKeys[fechaOrig + "|" + progOrig] = true;
+  }
+  var deletedOld = deleteProgramRowsByKeys(sheet, dedupKeys);
 
   var startRow = getFirstEmptyRowByColumnA(sheet);
   var endRow = startRow + rowsToWrite.length - 1;
   if (endRow >= sheet.getMaxRows()) {
     sheet.insertRowsAfter(sheet.getMaxRows(), rowsToWrite.length + 2);
   }
+  sheet.getRange(startRow, 1, rowsToWrite.length, 1).setNumberFormat("@");
   sheet.getRange(startRow, 1, rowsToWrite.length, 10).setValues(rowsToWrite);
   SpreadsheetApp.flush();
   ensureSingleCleanBottomRow(sheet, endRow);
 
-  logScriptEvent(ss, "PUBLISH_DAILY_WOD", data.atleta || "Coach", startRow, "HEALTHY", "Fecha: " + fecha + " | Programa: " + programa + " | Bloques: " + rowsToWrite.length);
-  return { status: "ok", message: "Programación publicada exitosamente (" + rowsToWrite.length + " bloques).", insertedCount: rowsToWrite.length, fecha: fecha, programa: programa };
+  logScriptEvent(ss, "PUBLISH_DAILY_WOD", data.atleta || "Coach", startRow, "HEALTHY", "Fecha: " + fecha + " | Programa: " + programa + " | Reemplazadas: " + deletedOld + " | Bloques: " + rowsToWrite.length);
+  return { status: "ok", message: "Día guardado limpiamente (" + rowsToWrite.length + " bloques, " + deletedOld + " previas reemplazadas).", insertedCount: rowsToWrite.length, replacedCount: deletedOld, fecha: fecha, programa: programa };
 }
 
 /**
@@ -4066,7 +4072,12 @@ function publishWeeklyWodBatch(ss, data) {
   for (var dk = 0; dk < rowsToWrite.length; dk++) {
     dedupKeys[rowsToWrite[dk][0] + "|" + String(rowsToWrite[dk][3]).toLowerCase()] = true;
   }
-  deleteProgramRowsByKeys(sheet, dedupKeys);
+  if (data.replaceFullWeek === true) {
+    for (var wd = 0; wd < 6; wd++) {
+      dedupKeys[addDaysISO(fechaInicio, wd) + "|" + programa.toLowerCase()] = true;
+    }
+  }
+  var deletedCount = deleteProgramRowsByKeys(sheet, dedupKeys);
 
   var startRow = getFirstEmptyRowByColumnA(sheet);
   var endRow = startRow + rowsToWrite.length - 1;
@@ -4074,7 +4085,8 @@ function publishWeeklyWodBatch(ss, data) {
     sheet.insertRowsAfter(sheet.getMaxRows(), rowsToWrite.length + 5);
   }
 
-  // Escritura atómica en UNA SOLA operación batch
+  // Escritura atómica en UNA SOLA operación batch (columna Fecha en formato texto @)
+  sheet.getRange(startRow, 1, rowsToWrite.length, 1).setNumberFormat("@");
   sheet.getRange(startRow, 1, rowsToWrite.length, 10).setValues(rowsToWrite);
   SpreadsheetApp.flush();
   ensureSingleCleanBottomRow(sheet, endRow);
@@ -4085,13 +4097,14 @@ function publishWeeklyWodBatch(ss, data) {
     data.atleta || "Coach",
     startRow,
     "HEALTHY",
-    "Programa: " + programa + " | Inicio: " + fechaInicio + " | Días: " + activeDaysCount + " | Bloques: " + rowsToWrite.length
+    "Programa: " + programa + " | Inicio: " + fechaInicio + " | Reemplazadas: " + deletedCount + " | Días: " + activeDaysCount + " | Bloques: " + rowsToWrite.length
   );
 
   return {
     status: "ok",
-    message: "Semana publicada en bloque (" + activeDaysCount + " días, " + rowsToWrite.length + " bloques) para " + programa + ".",
+    message: "Semana guardada sin duplicados (" + activeDaysCount + " días, " + rowsToWrite.length + " bloques, " + deletedCount + " filas previas reemplazadas) para " + programa + ".",
     insertedCount: rowsToWrite.length,
+    replacedCount: deletedCount,
     daysCount: activeDaysCount,
     programa: programa
   };
@@ -4115,6 +4128,9 @@ function deleteProgramRowsByKeys(sheet, keysMap) {
   }
   for (var j = rowsToDelete.length - 1; j >= 0; j--) {
     sheet.deleteRow(rowsToDelete[j]);
+  }
+  if (rowsToDelete.length > 0) {
+    SpreadsheetApp.flush();
   }
   return rowsToDelete.length;
 }

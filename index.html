@@ -39,7 +39,7 @@
   <!-- Canvas Confetti para Celebración Épica de Récords Personales (PR) -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
 
-  <link rel="stylesheet" href="css/styles.css?v=3.3">
+  <link rel="stylesheet" href="css/styles.css?v=3.4">
 </head>
 <body>
   <!-- Fondo cinemático del Partenón con velo oscuro -->
@@ -228,6 +228,7 @@
                 <option value="Atenea_Comp5">🏆 Atenea_Comp5 (5 Dic)</option>
               </select>
               <input type="date" id="hoyDatePicker" class="hoy-date-input" aria-label="Seleccionar fecha del WOD">
+              <button type="button" id="btnEditCurrentDayWod" class="btn-coach-publish" style="display: none;">✏️ Editar este día</button>
               <button type="button" id="btnOpenTimerFromHoy" class="btn-open-timer">⏱️ Abrir Reloj WOD</button>
             </div>
           </div>
@@ -1289,10 +1290,20 @@
         </div>
 
         <div class="coach-clone-bar">
+          <button type="button" id="btnLoadExistingWeek" class="btn-secondary" style="font-size:0.78rem; padding:0.45rem 0.8rem;">
+            📥 Cargar Semana Publicada
+          </button>
           <button type="button" id="btnCloneAteneaToComp5" class="btn-clone-week">
             📋 Clonar semana de Atenea &rarr; Atenea_Comp5
           </button>
           <span id="coachWeekSummaryTag" class="coach-week-summary">0 bloques en borrador</span>
+        </div>
+
+        <!-- Fecha exacta editable del día activo (permite corregir fecha de un día individual) -->
+        <div class="coach-day-date-row">
+          <label for="coachActiveDayDate">Fecha exacta de este día:</label>
+          <input type="date" id="coachActiveDayDate" class="hoy-date-input">
+          <button type="button" id="btnSaveSingleDayWod" class="btn-coach-publish">💾 Guardar Solo Este Día</button>
         </div>
 
         <!-- Selector de los 6 días de la semana (Lun-Sáb) -->
@@ -1363,6 +1374,6 @@
   <!-- TOAST NOTIFICATIONS -->
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="js/app.js?v=3.3"></script>
+  <script src="js/app.js?v=3.4"></script>
 </body>
 </html>

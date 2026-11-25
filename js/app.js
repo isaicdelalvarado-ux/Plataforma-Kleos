@@ -2774,6 +2774,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (hoyProgPreview) {
       hoyProgPreview.style.display = isCoach ? 'inline-block' : 'none';
     }
+    const btnEditCurDay = document.getElementById('btnEditCurrentDayWod');
+    if (btnEditCurDay) {
+      btnEditCurDay.style.display = isCoach ? 'inline-flex' : 'none';
+    }
 
     if (!isCoach) {
       // Privacidad total para rol Atleta: bloquear selectores a su propio nombre
@@ -3444,7 +3448,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const coachAthletesProgramList = document.getElementById('coachAthletesProgramList');
   const coachWodDate = document.getElementById('coachWodDate');
   const coachWodProgram = document.getElementById('coachWodProgram');
+  const btnLoadExistingWeek = document.getElementById('btnLoadExistingWeek');
   const btnCloneAteneaToComp5 = document.getElementById('btnCloneAteneaToComp5');
+  const coachActiveDayDate = document.getElementById('coachActiveDayDate');
+  const btnSaveSingleDayWod = document.getElementById('btnSaveSingleDayWod');
+  const btnEditCurrentDayWod = document.getElementById('btnEditCurrentDayWod');
   const coachWeekSummaryTag = document.getElementById('coachWeekSummaryTag');
   const coachWeekDayBtns = document.querySelectorAll('#coachWeekDayTabs .weekday-pill');
   const lblWhatsappDay = document.getElementById('lblWhatsappDay');
@@ -3465,6 +3473,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let aiDualModeActive = false;
   let activePreviewProgram = 'Atenea';
   let activeCoachDay = 0;
+  let originalDayDates = ['', '', '', '', '', ''];
+  let customDayDates = ['', '', '', '', '', ''];
 
   const aiDualPreviewBar = document.getElementById('aiDualPreviewBar');
   const btnPreviewAtenea = document.getElementById('btnPreviewAtenea');
@@ -3555,8 +3565,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (lblWhatsappDay) {
       const startIso = (coachWodDate && coachWodDate.value) || getMondayOfDate(todayStr);
-      const dayIso = addDaysToIso(startIso, activeCoachDay);
+      const dayIso = customDayDates[activeCoachDay] || addDaysToIso(startIso, activeCoachDay);
       lblWhatsappDay.textContent = `📋 Pegar WOD desde WhatsApp · ${WEEKDAY_NAMES[activeCoachDay]} (${dayIso})`;
+      if (coachActiveDayDate) {
+        coachActiveDayDate.value = dayIso;
+      }
     }
   }
 
@@ -3705,7 +3718,137 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   if (coachWodDate) {
-    coachWodDate.addEventListener('change', () => updateWeekDayCounters());
+    coachWodDate.addEventListener('change', () => {
+      customDayDates = ['', '', '', '', '', ''];
+      updateWeekDayCounters();
+    });
+  }
+
+  if (coachActiveDayDate) {
+    coachActiveDayDate.addEventListener('change', () => {
+      customDayDates[activeCoachDay] = coachActiveDayDate.value;
+      updateWeekDayCounters();
+    });
+  }
+
+  async function loadExistingWeekIntoCoachModal(startIso, progName, focusDayIdx = 0) {
+    const prog = progName || (coachWodProgram && coachWodProgram.value) || 'Atenea';
+    const mondayIso = getMondayOfDate(startIso || todayStr);
+    if (coachWodDate) coachWodDate.value = mondayIso;
+    if (coachWodProgram) coachWodProgram.value = prog;
+    aiDualModeActive = false;
+    updateDualPreviewUI();
+
+    if (btnLoadExistingWeek) {
+      btnLoadExistingWeek.disabled = true;
+      btnLoadExistingWeek.textContent = 'Cargando semana...';
+    }
+    try {
+      const url = `${currentScriptUrl}?action=getWeeklyWod&fechaInicio=${encodeURIComponent(mondayIso)}&programa=${encodeURIComponent(prog)}`;
+      const resp = await fetch(url, { method: 'GET', mode: 'cors' });
+      const data = await resp.json();
+      const dias = (data && Array.isArray(data.dias)) ? data.dias : [];
+      weeklyDrafts = [[], [], [], [], [], []];
+      originalDayDates = ['', '', '', '', '', ''];
+      customDayDates = ['', '', '', '', '', ''];
+      let loadedCount = 0;
+      dias.forEach((dObj, i) => {
+        if (i < 6) {
+          originalDayDates[i] = dObj.fecha || addDaysToIso(mondayIso, i);
+          customDayDates[i] = originalDayDates[i];
+          if (Array.isArray(dObj.bloques)) {
+            weeklyDrafts[i] = dObj.bloques.map(b => ({ ...b }));
+            loadedCount += dObj.bloques.length;
+          }
+        }
+      });
+      activeCoachDay = Math.max(0, Math.min(5, focusDayIdx));
+      renderActiveCoachDayBlocks();
+      showToast(`📥 Cargados ${loadedCount} bloques publicados de ${prog} (semana del ${mondayIso})`, 'success');
+    } catch (_) {
+      showToast('Error cargando semana existente desde Sheets.', 'error');
+    } finally {
+      if (btnLoadExistingWeek) {
+        btnLoadExistingWeek.disabled = false;
+        btnLoadExistingWeek.textContent = '📥 Cargar Semana Publicada';
+      }
+    }
+  }
+
+  if (btnLoadExistingWeek) {
+    btnLoadExistingWeek.addEventListener('click', () => {
+      const startIso = (coachWodDate && coachWodDate.value) || getMondayOfDate(todayStr);
+      const prog = (coachWodProgram && coachWodProgram.value) || 'Atenea';
+      loadExistingWeekIntoCoachModal(startIso, prog, activeCoachDay);
+    });
+  }
+
+  if (btnEditCurrentDayWod && coachWodModal) {
+    btnEditCurrentDayWod.addEventListener('click', async () => {
+      const curDate = (hoyDatePicker && hoyDatePicker.value) || todayStr;
+      const curProg = (hoyProgramPreviewSelect && hoyProgramPreviewSelect.value) || 'Atenea';
+      const mondayIso = getMondayOfDate(curDate);
+      // Calcular índice 0..5 (Lun..Sáb) del día seleccionado
+      const pCur = curDate.split('-');
+      const dObj = new Date(parseInt(pCur[0], 10), parseInt(pCur[1], 10) - 1, parseInt(pCur[2], 10));
+      const dow = dObj.getDay(); // 0=Dom, 1=Lun .. 6=Sab
+      const dayIdx = dow === 0 ? 5 : Math.max(0, Math.min(5, dow - 1));
+
+      if (coachTabWeekly) coachTabWeekly.click();
+      coachWodModal.showModal();
+      await loadExistingWeekIntoCoachModal(mondayIso, curProg, dayIdx);
+    });
+  }
+
+  if (btnSaveSingleDayWod) {
+    btnSaveSingleDayWod.addEventListener('click', async () => {
+      if (!activePwaSession || String(activePwaSession.rol).toLowerCase() !== 'coach') return;
+      const bloques = readCurrentDayDraftFromDom();
+      if (bloques.length === 0) {
+        showToast('Agrega al menos un bloque para guardar este día.', 'error');
+        return;
+      }
+      const startIso = (coachWodDate && coachWodDate.value) || getMondayOfDate(todayStr);
+      const targetFecha = (coachActiveDayDate && coachActiveDayDate.value) || customDayDates[activeCoachDay] || addDaysToIso(startIso, activeCoachDay);
+      const origFecha = originalDayDates[activeCoachDay] || targetFecha;
+      const prog = aiDualModeActive ? activePreviewProgram : ((coachWodProgram && coachWodProgram.value) || 'Atenea');
+
+      btnSaveSingleDayWod.disabled = true;
+      btnSaveSingleDayWod.textContent = 'Guardando día...';
+      try {
+        const resp = await fetch(currentScriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            type: 'publishDailyWod',
+            rol: activePwaSession.rol,
+            atleta: activePwaSession.atleta,
+            fecha: targetFecha,
+            fechaOriginal: origFecha,
+            programa: prog,
+            programaOriginal: prog,
+            ciclo: localStorage.getItem('kleos_active_cycle') || 'Atenea',
+            semana: parseInt(localStorage.getItem('kleos_current_week'), 10) || 2,
+            bloques: bloques
+          })
+        });
+        const res = await resp.json();
+        if (res && res.status === 'ok') {
+          originalDayDates[activeCoachDay] = targetFecha;
+          customDayDates[activeCoachDay] = targetFecha;
+          showToast(`✅ ${res.message}`, 'success');
+          if (hoyDatePicker) hoyDatePicker.value = targetFecha;
+          loadDailyWod();
+        } else {
+          showToast((res && res.message) || 'Error guardando el día.', 'error');
+        }
+      } catch (_) {
+        showToast('Error de red al guardar el día.', 'error');
+      } finally {
+        btnSaveSingleDayWod.disabled = false;
+        btnSaveSingleDayWod.textContent = '💾 Guardar Solo Este Día';
+      }
+    });
   }
 
   if (btnCloneAteneaToComp5) {
@@ -3838,7 +3981,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const srcDrafts = aiDualModeActive ? weeklyDraftsByProgram[prog] : weeklyDrafts;
         const diasPayload = srcDrafts.map((bloques, idx) => ({
           dayIndex: idx,
-          fecha: addDaysToIso(startIso, idx),
+          fecha: customDayDates[idx] || addDaysToIso(startIso, idx),
           bloques: bloques
         })).filter(d => d.bloques.length > 0);
         if (diasPayload.length > 0) {
