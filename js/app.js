@@ -596,8 +596,9 @@ document.addEventListener('DOMContentLoaded', () => {
     wodEmomCompletedMinutes.addEventListener('input', updateMetconScorePreview);
   }
 
-  // Fechas predeterminadas
-  const todayStr = new Date().toISOString().split('T')[0];
+  // Fechas predeterminadas (hora local, sin desfase UTC de toISOString)
+  const _nowLocalInit = new Date();
+  const todayStr = `${_nowLocalInit.getFullYear()}-${String(_nowLocalInit.getMonth() + 1).padStart(2, '0')}-${String(_nowLocalInit.getDate()).padStart(2, '0')}`;
   const wellnessDateInput = document.getElementById('wellnessDate');
   if (wellnessDateInput) wellnessDateInput.value = todayStr;
   if (wodDateInput) wodDateInput.value = todayStr;
@@ -3024,20 +3025,19 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (hoyDateSubtitle) {
-        const shown = data.fechaMostrada || fecha;
-        hoyDateSubtitle.textContent = data.isFallbackDate
-          ? `Mostrando última sesión publicada (${shown}) · Pesos para ${ath || 'Atleta'}`
-          : `Sesión oficial ${shown} · Pesos calculados para ${ath || 'Atleta'}`;
+        hoyDateSubtitle.textContent = `Sesión oficial ${fecha} · Pesos calculados para ${ath || 'Atleta'}`;
       }
 
-      const bloques = (data && Array.isArray(data.bloques)) ? data.bloques : [];
+      // Filtrado estricto en cliente por string exacto YYYY-MM-DD (cero fallback silencioso)
+      const rawBloques = (data && Array.isArray(data.bloques)) ? data.bloques : [];
+      const bloques = rawBloques.filter(b => !b.fecha || String(b.fecha).substring(0, 10) === fecha);
       if (bloques.length === 0) {
         const coachBtnHtml = isCoach
-          ? `<button type="button" id="btnQuickPublishEmptyHoy" class="btn-coach-publish" style="margin-top:0.75rem;">+ Publicar WOD para esta fecha</button>`
+          ? `<button type="button" id="btnQuickPublishEmptyHoy" class="btn-coach-publish" style="margin-top:0.75rem;">+ Publicar WOD para ${fecha}</button>`
           : '';
         hoyWodBlocksContainer.innerHTML = `
           <div class="hoy-loading-msg">
-            <div>Aún no hay programación publicada para esta fecha.</div>
+            <div>Aún no hay programación publicada para el <strong>${fecha}</strong> (${data.programa || 'Atenea'}).</div>
             ${coachBtnHtml}
           </div>
         `;

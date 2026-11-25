@@ -2313,11 +2313,21 @@ function initWellnessHeaders(sheet) {
 
 function parseDate(dateStr) {
   if (!dateStr) return new Date();
-  var parts = dateStr.split("-");
-  if (parts.length === 3) {
-    return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  if (dateStr instanceof Date) return dateStr;
+  var s = String(dateStr).trim();
+  // Formato ISO YYYY-MM-DD (construcción local sin desfase UTC)
+  var mIso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (mIso) {
+    return new Date(parseInt(mIso[1], 10), parseInt(mIso[2], 10) - 1, parseInt(mIso[3], 10), 12, 0, 0);
   }
-  return new Date(dateStr);
+  // Formato DD/MM/YYYY o DD-MM-YYYY
+  var mLat = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (mLat) {
+    var yr = parseInt(mLat[3], 10);
+    if (yr < 100) yr += 2000;
+    return new Date(yr, parseInt(mLat[2], 10) - 1, parseInt(mLat[1], 10), 12, 0, 0);
+  }
+  return new Date(s);
 }
 
 function formatDateISO(d) {
@@ -3617,20 +3627,13 @@ function getDailyWodData(ss, fechaParam, athleteParam, programParam) {
     });
   }
 
+  // Filtrado ESTRICTO por la fecha solicitada (YYYY-MM-DD) sin fallback silencioso a otro día
   var matched = programRows.filter(function(r) {
     return r.fecha === requestedDate;
   });
 
   var shownDate = requestedDate;
   var isFallback = false;
-
-  if (matched.length === 0 && programRows.length > 0) {
-    // Buscar la fecha más reciente programada dentro de SU programa
-    var datesSorted = programRows.map(function(r) { return r.fecha; }).sort();
-    shownDate = datesSorted[datesSorted.length - 1];
-    isFallback = true;
-    matched = programRows.filter(function(r) { return r.fecha === shownDate; });
-  }
 
   matched.sort(function(a, b) { return a.orden - b.orden; });
 
@@ -4204,7 +4207,7 @@ function parseWodWithAI(ss, rawText, isMultiDay, yearHint) {
       "  ]\n" +
       "}\n\n" +
       "REGLAS ESTRICTAS:\n" +
-      "1. Vincula cada bloque a su fecha exacta en formato YYYY-MM-DD según el encabezado del día (ej. 'LUNES 23/11' -> '" + targetYear + "-11-23', 'MARTES 24/11' -> '" + targetYear + "-11-24').\n" +
+      "1. Vincula cada bloque a su fecha EXACTA en formato texto YYYY-MM-DD leyendo EXPLÍCITAMENTE el encabezado del día y NUNCA por índice relativo ni saltando días. Ejemplos obligatorios: 'LUNES 23/11' -> '" + targetYear + "-11-23', 'MARTES 24/11' -> '" + targetYear + "-11-24', 'MIÉRCOLES 25/11' -> '" + targetYear + "-11-25', 'JUEVES 26/11' -> '" + targetYear + "-11-26', 'VIERNES 27/11' -> '" + targetYear + "-11-27', 'SÁBADO 28/11' -> '" + targetYear + "-11-28'.\n" +
       "2. Agrupa ÚNICAMENTE por bloques principales (Bloque 1..6 por día). Conserva todas las sub-viñetas (Parte A/B/C, Pista A/B) dentro de 'esquema'.\n" +
       "3. Si un día distingue entre 'Grupo General' y 'Atletas Comp 5 Dic', genera filas separadas con programa='Atenea' (solo texto General) y programa='Atenea_Comp5' (solo texto Comp 5 Dic). Si no distingue, usa programa='Atenea'.\n" +
       "4. En bloques con % de 1RM (@ 75%, @ 72%), extrae el entero en 'porcentaje' y normaliza 'ejercicio' EXACTAMENTE a: Front Squat, Back Squat, Clean Squat, Clean & Jerk, Snatch, Bench Press, Push Press, Deadlift.\n\n" +
