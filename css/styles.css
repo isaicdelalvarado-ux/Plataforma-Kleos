@@ -3760,3 +3760,104 @@ body {
   font-size: 0.78rem;
   color: #cbd5e1;
 }
+
+.coach-modal-tabs.coach-tabs-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.btn-delete-day {
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #f87171;
+  border-radius: 9px;
+  padding: 0.42rem 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-edit-block-inline {
+  background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  border-radius: 7px;
+  padding: 0.22rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.import-top-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  align-items: flex-start;
+  margin-bottom: 0.75rem;
+}
+
+.import-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 1.4rem 1rem;
+  border: 2px dashed rgba(56, 189, 248, 0.4);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.75);
+  text-align: center;
+  cursor: pointer;
+  margin-bottom: 0.85rem;
+}
+
+.import-dropzone:hover {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.import-dz-icon {
+  font-size: 1.8rem;
+}
+
+.import-dropzone strong {
+  font-size: 0.86rem;
+  color: #f8fafc;
+}
+
+.import-dropzone small {
+  font-size: 0.74rem;
+  color: #94a3b8;
+}
+
+.import-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-height: 36vh;
+  overflow-y: auto;
+  margin-bottom: 0.75rem;
+}
+
+.import-group-card {
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 11px;
+  padding: 0.7rem 0.85rem;
+}
+
+.import-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #38bdf8;
+  margin-bottom: 0.4rem;
+}
+
+.import-group-item {
+  font-size: 0.76rem;
+  color: #e2e8f0;
+  padding: 0.25rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}

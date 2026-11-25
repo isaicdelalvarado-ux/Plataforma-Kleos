@@ -1419,8 +1419,18 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
     else if (data.type === "parseWodWithAI" || data.type === "parse_wod_ai" || data.action === "parseWodWithAI") {
-      var aiRes = parseWodWithAI(ss, data.rawText || data.text || data.wodText || "");
+      var aiRes = parseWodWithAI(ss, data.rawText || data.text || data.wodText || "", !!data.multiDay, data.yearHint || 2026);
       return ContentService.createTextOutput(JSON.stringify(aiRes))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    else if (data.type === "publishMultiProgramBlocks" || data.action === "publishMultiProgramBlocks") {
+      var mpRes = publishMultiProgramBlocksBatch(ss, data);
+      return ContentService.createTextOutput(JSON.stringify(mpRes))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    else if (data.type === "deleteDailyWod" || data.action === "deleteDailyWod") {
+      var delRes = deleteDailyWodBlocks(ss, data);
+      return ContentService.createTextOutput(JSON.stringify(delRes))
         .setMimeType(ContentService.MimeType.JSON);
     }
     else if (data.type === "setGeminiApiKey" || data.action === "setGeminiApiKey") {
@@ -3503,7 +3513,7 @@ function updateKleosUserPin(ss, usuario, atleta, pinActual, pinNuevo) {
 function normalizeDateToISO(val) {
   if (!val) return "";
   if (val instanceof Date) {
-    return Utilities.formatDate(val, Session.getScriptTimeZone() || "America/Caracas", "yyyy-MM-dd");
+    return Utilities.formatDate(val, "America/Caracas", "yyyy-MM-dd");
   }
   var s = String(val).trim();
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
@@ -3511,7 +3521,7 @@ function normalizeDateToISO(val) {
   }
   var parsed = parseDate(s);
   if (parsed && !isNaN(parsed.getTime())) {
-    return Utilities.formatDate(parsed, Session.getScriptTimeZone() || "America/Caracas", "yyyy-MM-dd");
+    return Utilities.formatDate(parsed, "America/Caracas", "yyyy-MM-dd");
   }
   return s;
 }
@@ -4159,7 +4169,7 @@ function normalizeRmExerciseForWod(rawEj, pct) {
  * Agrupa exclusivamente por bloques principales (Bloque 1..6), separa 'Atenea' vs 'Atenea_Comp5'
  * si el texto diferencia entre Grupo General y Atletas Comp 5 Dic, y normaliza ejercicios %1RM.
  */
-function parseWodWithAI(ss, rawText) {
+function parseWodWithAI(ss, rawText, isMultiDay, yearHint) {
   var text = String(rawText || "").trim();
   if (!text) {
     return { status: "error", message: "El texto de la programación está vacío." };
@@ -4170,29 +4180,60 @@ function parseWodWithAI(ss, rawText) {
     return { status: "error", message: "GEMINI_API_KEY no está configurada en Script Properties." };
   }
 
-  var prompt =
-    "Eres el Arquitecto de Programación Deportiva de Plataforma Kleos (CrossFit / Halterofilia).\n" +
-    "Analiza la siguiente sesión de entrenamiento pegada desde WhatsApp y devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta:\n" +
-    "{\n" +
-    "  \"hasDualPrograms\": boolean,\n" +
-    "  \"atenea\": [\n" +
-    "    {\n" +
-    "      \"bloque\": \"Bloque 1: Título corto\",\n" +
-    "      \"orden\": 1,\n" +
-    "      \"ejercicio\": \"Nombre del ejercicio\",\n" +
-    "      \"esquema\": \"Descripción completa y limpia del bloque con todas sus sub-viñetas, partes A/B/C, pistas, series y repeticiones\",\n" +
-    "      \"porcentaje\": 0,\n" +
-    "      \"notas\": \"Notas técnicas o tiempos clave del coach\"\n" +
-    "    }\n" +
-    "  ],\n" +
-    "  \"atenea_comp5\": [ ...mismo formato... ]\n" +
-    "}\n\n" +
-    "REGLAS ESTRICTAS:\n" +
-    "1. Agrupa ÚNICAMENTE por los bloques principales (ej. Bloque 1, Bloque 2, Bloque 3, Bloque 4, Bloque 5, Bloque 6). NUNCA dividas sub-viñetas (Parte A/B/C, Pista A/B, pasos 1/2/3) en bloques separados; intégralas limpiamente dentro de 'esquema' y 'notas' de su bloque padre.\n" +
-    "2. Si el texto distingue entre 'Grupo General' y 'Atletas Comp 5 Dic' (o 'Comp 5 Dic'), establece hasDualPrograms: true y genera dos listas completas e independientes: 'atenea' (SOLO las indicaciones del Grupo General y partes comunes, sin mencionar Comp 5 Dic) y 'atenea_comp5' (SOLO las indicaciones de Atletas Comp 5 Dic y partes comunes, sin mencionar Grupo General). Si no hay distinción, pon hasDualPrograms: false y deja 'atenea_comp5' vacío [].\n" +
-    "3. En cualquier bloque que mencione un porcentaje de 1RM (ej. @ 75% 1RM, @ 72% 1RM), extrae el entero en 'porcentaje' (ej. 75, 72) y normaliza 'ejercicio' EXACTAMENTE a uno de estos nombres canónicos de RM_Atenea: Front Squat, Back Squat, Clean Squat, Clean & Jerk, Snatch, Bench Press, Push Press, Deadlift.\n" +
-    "4. Mantén 'orden' secuencial desde 1 hasta N (ej. 1..6).\n\n" +
-    "PROGRAMACIÓN A PROCESAR:\n" + text;
+  var targetYear = parseInt(yearHint, 10) || 2026;
+  var prompt = "";
+
+  if (isMultiDay) {
+    prompt =
+      "Eres el Arquitecto de Programación Deportiva de Plataforma Kleos (CrossFit / Halterofilia).\n" +
+      "Analiza el siguiente documento Word (.docx) que puede contener MÚLTIPLES DÍAS de entrenamiento (ej. LUNES 23/11, MARTES 24/11, etc.) del año " + targetYear + ".\n" +
+      "Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta:\n" +
+      "{\n" +
+      "  \"isMultiDay\": true,\n" +
+      "  \"items\": [\n" +
+      "    {\n" +
+      "      \"fecha\": \"YYYY-MM-DD\",\n" +
+      "      \"programa\": \"Atenea\",\n" +
+      "      \"orden\": 1,\n" +
+      "      \"bloque\": \"Bloque 1: Título corto\",\n" +
+      "      \"ejercicio\": \"Nombre del ejercicio\",\n" +
+      "      \"esquema\": \"Descripción completa del bloque con sub-viñetas, series y reps\",\n" +
+      "      \"porcentaje\": 0,\n" +
+      "      \"notas\": \"Notas técnicas del coach\"\n" +
+      "    }\n" +
+      "  ]\n" +
+      "}\n\n" +
+      "REGLAS ESTRICTAS:\n" +
+      "1. Vincula cada bloque a su fecha exacta en formato YYYY-MM-DD según el encabezado del día (ej. 'LUNES 23/11' -> '" + targetYear + "-11-23', 'MARTES 24/11' -> '" + targetYear + "-11-24').\n" +
+      "2. Agrupa ÚNICAMENTE por bloques principales (Bloque 1..6 por día). Conserva todas las sub-viñetas (Parte A/B/C, Pista A/B) dentro de 'esquema'.\n" +
+      "3. Si un día distingue entre 'Grupo General' y 'Atletas Comp 5 Dic', genera filas separadas con programa='Atenea' (solo texto General) y programa='Atenea_Comp5' (solo texto Comp 5 Dic). Si no distingue, usa programa='Atenea'.\n" +
+      "4. En bloques con % de 1RM (@ 75%, @ 72%), extrae el entero en 'porcentaje' y normaliza 'ejercicio' EXACTAMENTE a: Front Squat, Back Squat, Clean Squat, Clean & Jerk, Snatch, Bench Press, Push Press, Deadlift.\n\n" +
+      "DOCUMENTO A PROCESAR:\n" + text;
+  } else {
+    prompt =
+      "Eres el Arquitecto de Programación Deportiva de Plataforma Kleos (CrossFit / Halterofilia).\n" +
+      "Analiza la siguiente sesión de entrenamiento pegada desde WhatsApp y devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta:\n" +
+      "{\n" +
+      "  \"hasDualPrograms\": boolean,\n" +
+      "  \"atenea\": [\n" +
+      "    {\n" +
+      "      \"bloque\": \"Bloque 1: Título corto\",\n" +
+      "      \"orden\": 1,\n" +
+      "      \"ejercicio\": \"Nombre del ejercicio\",\n" +
+      "      \"esquema\": \"Descripción completa y limpia del bloque con todas sus sub-viñetas, partes A/B/C, pistas, series y repeticiones\",\n" +
+      "      \"porcentaje\": 0,\n" +
+      "      \"notas\": \"Notas técnicas o tiempos clave del coach\"\n" +
+      "    }\n" +
+      "  ],\n" +
+      "  \"atenea_comp5\": [ ...mismo formato... ]\n" +
+      "}\n\n" +
+      "REGLAS ESTRICTAS:\n" +
+      "1. Agrupa ÚNICAMENTE por los bloques principales (ej. Bloque 1, Bloque 2, Bloque 3, Bloque 4, Bloque 5, Bloque 6). NUNCA dividas sub-viñetas (Parte A/B/C, Pista A/B, pasos 1/2/3) en bloques separados; intégralas limpiamente dentro de 'esquema' y 'notas' de su bloque padre.\n" +
+      "2. Si el texto distingue entre 'Grupo General' y 'Atletas Comp 5 Dic' (o 'Comp 5 Dic'), establece hasDualPrograms: true y genera dos listas completas e independientes: 'atenea' (SOLO las indicaciones del Grupo General y partes comunes, sin mencionar Comp 5 Dic) y 'atenea_comp5' (SOLO las indicaciones de Atletas Comp 5 Dic y partes comunes, sin mencionar Grupo General). Si no hay distinción, pon hasDualPrograms: false y deja 'atenea_comp5' vacío [].\n" +
+      "3. En cualquier bloque que mencione un porcentaje de 1RM (ej. @ 75% 1RM, @ 72% 1RM), extrae el entero en 'porcentaje' (ej. 75, 72) y normaliza 'ejercicio' EXACTAMENTE a uno de estos nombres canónicos de RM_Atenea: Front Squat, Back Squat, Clean Squat, Clean & Jerk, Snatch, Bench Press, Push Press, Deadlift.\n" +
+      "4. Mantén 'orden' secuencial desde 1 hasta N (ej. 1..6).\n\n" +
+      "PROGRAMACIÓN A PROCESAR:\n" + text;
+  }
 
   var modelsToTry = ["gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-flash-latest"];
   var payload = {
@@ -4237,6 +4278,34 @@ function parseWodWithAI(ss, rawText) {
     rawJson = rawJson.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
     var parsed = JSON.parse(rawJson);
 
+    if (isMultiDay && Array.isArray(parsed.items)) {
+      var multiItems = parsed.items.map(function(b, idx) {
+        var pct = parseInt(b.porcentaje || b.porcentaje1RM || 0, 10) || 0;
+        var ej = normalizeRmExerciseForWod(b.ejercicio || "", pct);
+        var fIso = normalizeDateToISO(b.fecha || "");
+        var prog = String(b.programa || "Atenea").trim();
+        if (prog.toLowerCase().indexOf("comp") !== -1) prog = "Atenea_Comp5";
+        else prog = "Atenea";
+        return {
+          fecha: fIso,
+          programa: prog,
+          orden: parseInt(b.orden, 10) || (idx + 1),
+          bloque: String(b.bloque || ("Bloque " + (idx + 1))).trim(),
+          ejercicio: ej,
+          esquema: String(b.esquema || "").trim(),
+          porcentaje: pct,
+          notas: String(b.notas || "").trim()
+        };
+      }).filter(function(item) { return item.fecha && (item.bloque || item.esquema); });
+
+      logScriptEvent(ss, "PARSE_WOD_AI_DOCX", "Coach", 0, "HEALTHY", "Bloques multi-día extraídos: " + multiItems.length);
+      return {
+        status: "ok",
+        isMultiDay: true,
+        items: multiItems
+      };
+    }
+
     var sanitizeList = function(arr) {
       if (!Array.isArray(arr)) return [];
       return arr.map(function(b, idx) {
@@ -4267,8 +4336,112 @@ function parseWodWithAI(ss, rawText) {
     };
   } catch (err) {
     logScriptEvent(ss, "PARSE_WOD_AI_ERR", "Coach", 0, "ERROR", err.toString());
-    return { status: "error", message: "Error procesando con Gemini 2.5 Flash: " + err.toString() };
+    return { status: "error", message: "Error procesando con Gemini Flash: " + err.toString() };
   }
+}
+
+/**
+ * Elimina todos los bloques de una (Fecha, Programa) específica en 'Programacion_Diaria' (exclusivo Coach).
+ */
+function deleteDailyWodBlocks(ss, data) {
+  var rol = String(data.rol || "").trim().toLowerCase();
+  if (rol !== "coach") {
+    return { status: "error", message: "Acceso denegado: solo el Coach puede eliminar días." };
+  }
+  var fecha = normalizeDateToISO(data.fecha || data.date || "");
+  var programa = String(data.programa || "Atenea").trim();
+  if (!fecha) {
+    return { status: "error", message: "Fecha inválida para eliminar." };
+  }
+  var sheet = ss.getSheetByName(TABS.PROGRAMACION_DIARIA);
+  if (!sheet || sheet.getLastRow() < 2) {
+    return { status: "ok", deletedCount: 0, message: "No había bloques para eliminar." };
+  }
+  var keys = {};
+  keys[fecha + "|" + programa.toLowerCase()] = true;
+  var deleted = deleteProgramRowsByKeys(sheet, keys);
+  logScriptEvent(ss, "DELETE_DAILY_WOD", data.atleta || "Coach", 0, "HEALTHY", "Fecha: " + fecha + " | Programa: " + programa + " | Eliminadas: " + deleted);
+  return { status: "ok", deletedCount: deleted, message: "Eliminados " + deleted + " bloques de " + programa + " (" + fecha + ")." };
+}
+
+/**
+ * Publica una lista arbitraria de bloques multi-día y multi-programa (desde Excel, CSV o Word)
+ * en UNA SOLA operación batch, eliminando previamente todas las filas existentes de cada (Fecha, Programa).
+ */
+function publishMultiProgramBlocksBatch(ss, data) {
+  var rol = String(data.rol || "").trim().toLowerCase();
+  if (rol !== "coach") {
+    return { status: "error", message: "Acceso denegado: solo el Coach puede importar programación." };
+  }
+  var bloques = data.bloques;
+  if (!Array.isArray(bloques) || bloques.length === 0) {
+    return { status: "error", message: "No hay bloques válidos para guardar." };
+  }
+
+  var sheet = ss.getSheetByName(TABS.PROGRAMACION_DIARIA);
+  if (!sheet) {
+    sheet = ss.insertSheet(TABS.PROGRAMACION_DIARIA);
+    sheet.getRange(1, 1, 1, 10).setValues([[
+      "Fecha", "Ciclo", "Semana", "Programa", "Bloque", "Orden",
+      "Ejercicio", "Esquema_Sets_Reps", "Porcentaje_1RM", "Notas_Coach"
+    ]]);
+    sheet.setFrozenRows(1);
+  }
+
+  var ciclo = String(data.ciclo || getActiveCycle(ss) || "Atenea").trim();
+  var semana = parseInt(data.semana, 10) || getCurrentWeek(ss);
+
+  var dedupKeys = {};
+  var rowsToWrite = [];
+
+  for (var i = 0; i < bloques.length; i++) {
+    var b = bloques[i];
+    var fIso = normalizeDateToISO(b.fecha || "");
+    if (!fIso) continue;
+    var prog = String(b.programa || "Atenea").trim();
+    var pct = parseFloat(String(b.porcentaje || b.porcentaje1RM || "0").replace("%", "").replace(",", ".")) || 0;
+    var ej = normalizeRmExerciseForWod(b.ejercicio || "", pct);
+    dedupKeys[fIso + "|" + prog.toLowerCase()] = true;
+    rowsToWrite.push([
+      fIso,
+      ciclo,
+      semana,
+      prog,
+      String(b.bloque || ("Bloque " + (i + 1))).trim(),
+      parseInt(b.orden, 10) || (i + 1),
+      ej,
+      String(b.esquema || b.descripcion || "").trim(),
+      pct,
+      String(b.notas || "").trim()
+    ]);
+  }
+
+  if (rowsToWrite.length === 0) {
+    return { status: "error", message: "Ningún bloque tenía una fecha válida (YYYY-MM-DD)." };
+  }
+
+  var deletedCount = deleteProgramRowsByKeys(sheet, dedupKeys);
+
+  var startRow = getFirstEmptyRowByColumnA(sheet);
+  var endRow = startRow + rowsToWrite.length - 1;
+  if (endRow >= sheet.getMaxRows()) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), rowsToWrite.length + 5);
+  }
+
+  sheet.getRange(startRow, 1, rowsToWrite.length, 1).setNumberFormat("@");
+  sheet.getRange(startRow, 1, rowsToWrite.length, 10).setValues(rowsToWrite);
+  SpreadsheetApp.flush();
+  ensureSingleCleanBottomRow(sheet, endRow);
+
+  var groupsCount = Object.keys(dedupKeys).length;
+  logScriptEvent(ss, "IMPORT_MULTI_WOD", data.atleta || "Coach", startRow, "HEALTHY", "Grupos(Fecha|Prog): " + groupsCount + " | Reemplazadas: " + deletedCount + " | Insertadas: " + rowsToWrite.length);
+  return {
+    status: "ok",
+    message: "Importación completada: " + rowsToWrite.length + " bloques en " + groupsCount + " sesiones (" + deletedCount + " filas previas reemplazadas).",
+    insertedCount: rowsToWrite.length,
+    replacedCount: deletedCount,
+    groupsCount: groupsCount
+  };
 }
 
 

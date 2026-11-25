@@ -2778,6 +2778,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnEditCurDay) {
       btnEditCurDay.style.display = isCoach ? 'inline-flex' : 'none';
     }
+    const btnDelCurDay = document.getElementById('btnDeleteCurrentDayWod');
+    if (btnDelCurDay) {
+      btnDelCurDay.style.display = isCoach ? 'inline-flex' : 'none';
+    }
 
     if (!isCoach) {
       // Privacidad total para rol Atleta: bloquear selectores a su propio nombre
@@ -3045,6 +3049,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       hoyWodBlocksContainer.innerHTML = '';
+      const shownDateMeta = data.fechaMostrada || fecha;
+      const shownProgMeta = data.programa || 'Atenea';
+      window.__kleosLastWodMeta = { fecha: shownDateMeta, programa: shownProgMeta };
+
       bloques.forEach(b => {
         let weightPillHtml = '';
         if (b.porcentaje1RM > 0) {
@@ -3054,17 +3062,30 @@ document.addEventListener('DOMContentLoaded', () => {
             weightPillHtml = `<span class="hoy-weight-pill no-rm">⚡ ${b.porcentaje1RM}% 1RM · Sin marca base (usar Epley)</span>`;
           }
         }
+        const coachEditInline = isCoach
+          ? `<button type="button" class="btn-edit-block-inline" title="Editar este día">✏️ Editar</button>`
+          : '';
         const card = document.createElement('div');
         card.className = 'hoy-block-card';
         card.innerHTML = `
           <div class="hoy-block-top">
             <span class="hoy-block-tag">${b.bloque || 'Bloque ' + b.orden}</span>
-            ${weightPillHtml}
+            <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;">
+              ${weightPillHtml}
+              ${coachEditInline}
+            </div>
           </div>
           <h4 class="hoy-block-ex">${b.ejercicio}</h4>
           <p class="hoy-block-scheme">${b.esquema}</p>
           ${b.notas ? `<p class="hoy-block-notes">💡 ${b.notas}</p>` : ''}
         `;
+        const inlineBtn = card.querySelector('.btn-edit-block-inline');
+        if (inlineBtn) {
+          inlineBtn.addEventListener('click', () => {
+            const editBtn = document.getElementById('btnEditCurrentDayWod');
+            if (editBtn) editBtn.click();
+          });
+        }
         hoyWodBlocksContainer.appendChild(card);
       });
     } catch (err) {
@@ -3442,9 +3463,19 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- 7. MODAL COACH: PUBLICACIÓN SEMANAL (6 DÍAS), CLONADO Y PROGRAMAS DE ATLETAS ---
   const coachWodModal = document.getElementById('coachWodModal');
   const coachTabWeekly = document.getElementById('coachTabWeekly');
+  const coachTabImport = document.getElementById('coachTabImport');
   const coachTabAthletes = document.getElementById('coachTabAthletes');
   const coachWeeklyPane = document.getElementById('coachWeeklyPane');
+  const coachImportPane = document.getElementById('coachImportPane');
   const coachAthletesPane = document.getElementById('coachAthletesPane');
+  const btnDeleteCurrentDayWod = document.getElementById('btnDeleteCurrentDayWod');
+  const btnDownloadExcelTemplate = document.getElementById('btnDownloadExcelTemplate');
+  const coachFileUploadInput = document.getElementById('coachFileUploadInput');
+  const importStatusMsg = document.getElementById('importStatusMsg');
+  const importPreviewContainer = document.getElementById('importPreviewContainer');
+  const btnClearImportPreview = document.getElementById('btnClearImportPreview');
+  const btnPublishImportedBlocks = document.getElementById('btnPublishImportedBlocks');
+  let importedBlocksBuffer = [];
   const coachAthletesProgramList = document.getElementById('coachAthletesProgramList');
   const coachWodDate = document.getElementById('coachWodDate');
   const coachWodProgram = document.getElementById('coachWodProgram');
@@ -3693,19 +3724,266 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  if (coachTabWeekly && coachTabAthletes) {
-    coachTabWeekly.addEventListener('click', () => {
-      coachTabWeekly.classList.add('active');
-      coachTabAthletes.classList.remove('active');
-      if (coachWeeklyPane) coachWeeklyPane.style.display = 'flex';
-      if (coachAthletesPane) coachAthletesPane.style.display = 'none';
-    });
-    coachTabAthletes.addEventListener('click', () => {
-      coachTabAthletes.classList.add('active');
-      coachTabWeekly.classList.remove('active');
-      if (coachWeeklyPane) coachWeeklyPane.style.display = 'none';
+  function switchCoachModalTab(tabKey) {
+    [coachTabWeekly, coachTabImport, coachTabAthletes].forEach(b => b && b.classList.remove('active'));
+    if (coachWeeklyPane) coachWeeklyPane.style.display = 'none';
+    if (coachImportPane) coachImportPane.style.display = 'none';
+    if (coachAthletesPane) coachAthletesPane.style.display = 'none';
+
+    if (tabKey === 'import') {
+      if (coachTabImport) coachTabImport.classList.add('active');
+      if (coachImportPane) coachImportPane.style.display = 'block';
+    } else if (tabKey === 'athletes') {
+      if (coachTabAthletes) coachTabAthletes.classList.add('active');
       if (coachAthletesPane) coachAthletesPane.style.display = 'block';
       loadCoachAthletesPrograms();
+    } else {
+      if (coachTabWeekly) coachTabWeekly.classList.add('active');
+      if (coachWeeklyPane) coachWeeklyPane.style.display = 'flex';
+    }
+  }
+
+  if (coachTabWeekly) coachTabWeekly.addEventListener('click', () => switchCoachModalTab('weekly'));
+  if (coachTabImport) coachTabImport.addEventListener('click', () => switchCoachModalTab('import'));
+  if (coachTabAthletes) coachTabAthletes.addEventListener('click', () => switchCoachModalTab('athletes'));
+
+  // --- ELIMINAR DÍA COMPLETO DESDE TAB "HOY" (COACH) ---
+  if (btnDeleteCurrentDayWod) {
+    btnDeleteCurrentDayWod.addEventListener('click', async () => {
+      if (!activePwaSession || String(activePwaSession.rol).toLowerCase() !== 'coach') return;
+      const meta = window.__kleosLastWodMeta || {};
+      const targetDate = meta.fecha || (hoyDatePicker && hoyDatePicker.value) || todayStr;
+      const targetProg = meta.programa || (hoyProgramPreviewSelect && hoyProgramPreviewSelect.value) || 'Atenea';
+      if (!confirm(`¿Eliminar todos los bloques de ${targetProg} del día ${targetDate}?`)) return;
+
+      btnDeleteCurrentDayWod.disabled = true;
+      btnDeleteCurrentDayWod.textContent = 'Eliminando...';
+      try {
+        const resp = await fetch(currentScriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            type: 'deleteDailyWod',
+            rol: activePwaSession.rol,
+            atleta: activePwaSession.atleta,
+            fecha: targetDate,
+            programa: targetProg
+          })
+        });
+        const res = await resp.json();
+        if (res && res.status === 'ok') {
+          showToast(`🗑️ ${res.message}`, 'success');
+          loadDailyWod();
+        } else {
+          showToast((res && res.message) || 'No se pudo eliminar el día.', 'error');
+        }
+      } catch (_) {
+        showToast('Error de red al eliminar el día.', 'error');
+      } finally {
+        btnDeleteCurrentDayWod.disabled = false;
+        btnDeleteCurrentDayWod.textContent = '🗑️ Eliminar día';
+      }
+    });
+  }
+
+  // --- PLANTILLA EXCEL OFICIAL + SUBIDA DE EXCEL (.xlsx/.csv) Y WORD (.docx) ---
+  function excelCellToISO(val) {
+    if (val === undefined || val === null || val === '') return '';
+    if (typeof val === 'number' && val > 20000 && val < 80000) {
+      // Serial de fecha Excel -> convertir sin desfase horario
+      const utcDays = Math.floor(val - 25569);
+      const d = new Date(utcDays * 86400 * 1000);
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    }
+    const s = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
+    const mSlash = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (mSlash) {
+      let y = mSlash[3];
+      if (y.length === 2) y = '20' + y;
+      return `${y}-${String(mSlash[2]).padStart(2, '0')}-${String(mSlash[1]).padStart(2, '0')}`;
+    }
+    return s;
+  }
+
+  function renderImportedPreview() {
+    if (!importPreviewContainer) return;
+    importPreviewContainer.innerHTML = '';
+    if (btnPublishImportedBlocks) {
+      btnPublishImportedBlocks.disabled = importedBlocksBuffer.length === 0;
+    }
+    if (importedBlocksBuffer.length === 0) return;
+
+    const groups = {};
+    importedBlocksBuffer.forEach(item => {
+      const key = `${item.fecha} · ${item.programa}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(item);
+    });
+
+    Object.keys(groups).sort().forEach(k => {
+      const list = groups[k];
+      const card = document.createElement('div');
+      card.className = 'import-group-card';
+      const itemsHtml = list.map(b => {
+        const pctTag = b.porcentaje > 0 ? ` · <strong>${b.ejercicio} @ ${b.porcentaje}%</strong>` : '';
+        return `<div class="import-group-item"><strong>[${b.orden}] ${b.bloque}</strong>${pctTag}<br><span style="color:#94a3b8;">${b.esquema.substring(0, 130)}${b.esquema.length > 130 ? '...' : ''}</span></div>`;
+      }).join('');
+      card.innerHTML = `
+        <div class="import-group-header">
+          <span>📅 ${k}</span>
+          <span>${list.length} bloque(s)</span>
+        </div>
+        ${itemsHtml}
+      `;
+      importPreviewContainer.appendChild(card);
+    });
+  }
+
+  if (btnDownloadExcelTemplate) {
+    btnDownloadExcelTemplate.addEventListener('click', () => {
+      if (typeof XLSX === 'undefined') {
+        showToast('SheetJS no está cargado aún. Recarga la página.', 'error');
+        return;
+      }
+      const rows = [
+        { Fecha: '2026-11-23', Programa: 'Atenea', Orden_Bloque: 1, Titulo_Bloque: 'Bloque 1: Warm-up', Descripcion: '2 Rondas: 40 SU + 20 DU + 10 Air Squats pausa 2s', Ejercicio_RM: '', Porcentaje_1RM: 0 },
+        { Fecha: '2026-11-23', Programa: 'Atenea', Orden_Bloque: 2, Titulo_Bloque: 'Bloque 2: Fuerza Estructural', Descripcion: 'Paused Front Squat: 4x3 @ 75% 1RM + 4 Broad Jumps', Ejercicio_RM: 'Front Squat', Porcentaje_1RM: 75 },
+        { Fecha: '2026-11-23', Programa: 'Atenea_Comp5', Orden_Bloque: 2, Titulo_Bloque: 'Bloque 2: Fuerza Tapering', Descripcion: 'Paused Front Squat: 3x2 @ 75% 1RM + 2 Broad Jumps', Ejercicio_RM: 'Front Squat', Porcentaje_1RM: 75 },
+        { Fecha: '2026-11-23', Programa: 'Atenea', Orden_Bloque: 3, Titulo_Bloque: 'Bloque 3: Olímpico', Descripcion: 'Every 2:00 x 5 Sets: 1 Clean Pull + 1 Hang Squat Clean + 2 Squat Cleans @ 72%', Ejercicio_RM: 'Clean Squat', Porcentaje_1RM: 72 }
+      ];
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Programacion_Kleos');
+      XLSX.writeFile(wb, 'Plantilla_Programacion_Kleos.xlsx');
+      showToast('📥 Plantilla_Programacion_Kleos.xlsx descargada', 'success');
+    });
+  }
+
+  if (coachFileUploadInput) {
+    coachFileUploadInput.addEventListener('change', async (ev) => {
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      const ext = file.name.split('.').pop().toLowerCase();
+      importedBlocksBuffer = [];
+      renderImportedPreview();
+      if (importStatusMsg) {
+        importStatusMsg.style.display = 'block';
+        importStatusMsg.textContent = `⏳ Procesando ${file.name}...`;
+      }
+
+      try {
+        const buffer = await file.arrayBuffer();
+        if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
+          if (typeof XLSX === 'undefined') throw new Error('SheetJS no disponible.');
+          const wb = XLSX.read(buffer, { type: 'array', cellDates: false });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const rawRows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+          importedBlocksBuffer = rawRows.map((r, i) => {
+            const fecha = excelCellToISO(r.Fecha || r.fecha || r.DATE || '');
+            let prog = String(r.Programa || r.programa || 'Atenea').trim();
+            if (prog.toLowerCase().indexOf('comp') !== -1) prog = 'Atenea_Comp5';
+            else if (!prog) prog = 'Atenea';
+            const pct = parseFloat(String(r.Porcentaje_1RM || r.Porcentaje || r.porcentaje || '0').replace('%', '').replace(',', '.')) || 0;
+            return {
+              fecha: fecha,
+              programa: prog,
+              orden: parseInt(r.Orden_Bloque || r.Orden || (i + 1), 10) || (i + 1),
+              bloque: String(r.Titulo_Bloque || r.Bloque || `Bloque ${i + 1}`).trim(),
+              ejercicio: String(r.Ejercicio_RM || r.Ejercicio || r.Titulo_Bloque || '').trim(),
+              esquema: String(r.Descripcion || r.Esquema_Sets_Reps || r.Esquema || '').trim(),
+              porcentaje: pct,
+              notas: String(r.Notas_Coach || r.Notas || '').trim()
+            };
+          }).filter(b => b.fecha && (b.bloque || b.esquema));
+
+          if (importStatusMsg) {
+            importStatusMsg.textContent = `✅ Excel leído: ${importedBlocksBuffer.length} bloques listos (fechas exactas YYYY-MM-DD).`;
+          }
+          renderImportedPreview();
+        } else if (ext === 'docx') {
+          if (typeof mammoth === 'undefined') throw new Error('Mammoth.js no disponible.');
+          const extracted = await mammoth.extractRawText({ arrayBuffer: buffer });
+          const docText = (extracted && extracted.value) ? extracted.value.trim() : '';
+          if (!docText) throw new Error('El documento Word no contiene texto legible.');
+          if (importStatusMsg) {
+            importStatusMsg.textContent = '🤖 Texto extraído de Word. Estructurando días y programas con IA Gemini...';
+          }
+          const resp = await fetch(currentScriptUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              type: 'parseWodWithAI',
+              multiDay: true,
+              yearHint: new Date().getFullYear(),
+              rawText: docText
+            })
+          });
+          const res = await resp.json();
+          if (res && res.status === 'ok' && Array.isArray(res.items) && res.items.length > 0) {
+            importedBlocksBuffer = res.items;
+            if (importStatusMsg) {
+              importStatusMsg.textContent = `🤖 Word estructurado con IA: ${importedBlocksBuffer.length} bloques detectados.`;
+            }
+            renderImportedPreview();
+          } else {
+            throw new Error((res && res.message) || 'La IA no pudo extraer bloques del Word.');
+          }
+        } else {
+          throw new Error('Formato no soportado. Usa .xlsx, .csv o .docx.');
+        }
+      } catch (err) {
+        if (importStatusMsg) importStatusMsg.textContent = `❌ ${err.message}`;
+        showToast(err.message, 'error');
+      } finally {
+        coachFileUploadInput.value = '';
+      }
+    });
+  }
+
+  if (btnClearImportPreview) {
+    btnClearImportPreview.addEventListener('click', () => {
+      importedBlocksBuffer = [];
+      if (importStatusMsg) importStatusMsg.style.display = 'none';
+      renderImportedPreview();
+    });
+  }
+
+  if (btnPublishImportedBlocks) {
+    btnPublishImportedBlocks.addEventListener('click', async () => {
+      if (!activePwaSession || String(activePwaSession.rol).toLowerCase() !== 'coach' || importedBlocksBuffer.length === 0) return;
+      btnPublishImportedBlocks.disabled = true;
+      btnPublishImportedBlocks.textContent = 'Guardando sin duplicados...';
+      try {
+        const resp = await fetch(currentScriptUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            type: 'publishMultiProgramBlocks',
+            rol: activePwaSession.rol,
+            atleta: activePwaSession.atleta,
+            ciclo: localStorage.getItem('kleos_active_cycle') || 'Atenea',
+            semana: parseInt(localStorage.getItem('kleos_current_week'), 10) || 2,
+            bloques: importedBlocksBuffer
+          })
+        });
+        const res = await resp.json();
+        if (res && res.status === 'ok') {
+          showToast(`🚀 ${res.message}`, 'success');
+          importedBlocksBuffer = [];
+          renderImportedPreview();
+          if (coachWodModal) coachWodModal.close();
+          loadDailyWod();
+        } else {
+          showToast((res && res.message) || 'Error guardando plantilla.', 'error');
+        }
+      } catch (_) {
+        showToast('Error de red al guardar plantilla.', 'error');
+      } finally {
+        btnPublishImportedBlocks.disabled = false;
+        btnPublishImportedBlocks.textContent = '🚀 Guardar Plantilla en Programacion_Diaria';
+      }
     });
   }
 

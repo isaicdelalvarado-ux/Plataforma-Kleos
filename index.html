@@ -38,8 +38,11 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
   <!-- Canvas Confetti para Celebración Épica de Récords Personales (PR) -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+  <!-- SheetJS (Excel/CSV) y Mammoth.js (Word .docx) para carga de plantillas del Coach -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
 
-  <link rel="stylesheet" href="css/styles.css?v=3.4">
+  <link rel="stylesheet" href="css/styles.css?v=3.5">
 </head>
 <body>
   <!-- Fondo cinemático del Partenón con velo oscuro -->
@@ -228,7 +231,8 @@
                 <option value="Atenea_Comp5">🏆 Atenea_Comp5 (5 Dic)</option>
               </select>
               <input type="date" id="hoyDatePicker" class="hoy-date-input" aria-label="Seleccionar fecha del WOD">
-              <button type="button" id="btnEditCurrentDayWod" class="btn-coach-publish" style="display: none;">✏️ Editar este día</button>
+              <button type="button" id="btnEditCurrentDayWod" class="btn-coach-publish" style="display: none;">✏️ Editar día</button>
+              <button type="button" id="btnDeleteCurrentDayWod" class="btn-delete-day" style="display: none;">🗑️ Eliminar día</button>
               <button type="button" id="btnOpenTimerFromHoy" class="btn-open-timer">⏱️ Abrir Reloj WOD</button>
             </div>
           </div>
@@ -1268,9 +1272,10 @@
       </div>
 
       <!-- Pestañas internas del Modal Coach -->
-      <div class="coach-modal-tabs" role="tablist">
-        <button type="button" id="coachTabWeekly" class="coach-tab-btn active" role="tab" aria-selected="true">📅 Semana Completa (6 Días)</button>
-        <button type="button" id="coachTabAthletes" class="coach-tab-btn" role="tab" aria-selected="false">👥 Programas de Atletas</button>
+      <div class="coach-modal-tabs coach-tabs-3" role="tablist">
+        <button type="button" id="coachTabWeekly" class="coach-tab-btn active" role="tab" aria-selected="true">📅 Semana (6 Días)</button>
+        <button type="button" id="coachTabImport" class="coach-tab-btn" role="tab" aria-selected="false">📂 Excel / Word</button>
+        <button type="button" id="coachTabAthletes" class="coach-tab-btn" role="tab" aria-selected="false">👥 Atletas</button>
       </div>
 
       <!-- PANEL A: PUBLICACIÓN SEMANAL (LUNES A SÁBADO EN BATCH) -->
@@ -1341,7 +1346,32 @@
         </div>
       </div>
 
-      <!-- PANEL B: ASIGNACIÓN RÁPIDA DE PROGRAMAS DE ATLETAS -->
+      <!-- PANEL B: SUBIR PLANTILLA EXCEL (.xlsx/.csv) O WORD (.docx) -->
+      <div id="coachImportPane" class="coach-pane" style="display: none;">
+        <div class="import-top-actions">
+          <button type="button" id="btnDownloadExcelTemplate" class="btn-clone-week">
+            📥 Descargar Plantilla Excel Oficial (.xlsx)
+          </button>
+          <span class="coach-week-summary">Columnas: Fecha | Programa | Orden_Bloque | Titulo_Bloque | Descripcion | Ejercicio_RM | Porcentaje_1RM</span>
+        </div>
+
+        <label class="import-dropzone" for="coachFileUploadInput">
+          <span class="import-dz-icon">📂</span>
+          <strong>Haz clic para subir archivo Excel (.xlsx / .csv) o Word (.docx)</strong>
+          <small>Excel se carga directo con fechas exactas (YYYY-MM-DD, America/Caracas). Word se estructura con IA Gemini.</small>
+          <input type="file" id="coachFileUploadInput" accept=".xlsx,.xls,.csv,.docx" hidden>
+        </label>
+
+        <div id="importStatusMsg" class="hoy-loading-msg" style="display: none;"></div>
+        <div id="importPreviewContainer" class="import-preview-list"></div>
+
+        <div class="coach-modal-footer">
+          <button type="button" id="btnClearImportPreview" class="btn-secondary">Limpiar</button>
+          <button type="button" id="btnPublishImportedBlocks" class="btn-primary" disabled>🚀 Guardar Plantilla en Programacion_Diaria</button>
+        </div>
+      </div>
+
+      <!-- PANEL C: ASIGNACIÓN RÁPIDA DE PROGRAMAS DE ATLETAS -->
       <div id="coachAthletesPane" class="coach-pane" style="display: none;">
         <p class="hoy-subtitle" style="margin-bottom: 0.75rem;">Cambia el programa asignado de cualquier atleta en vivo (sincronizado con <code>Usuarios_Kleos</code>).</p>
         <div id="coachAthletesProgramList" class="coach-athletes-list">
@@ -1374,6 +1404,6 @@
   <!-- TOAST NOTIFICATIONS -->
   <div class="toast-container" id="toastContainer" aria-live="polite"></div>
 
-  <script src="js/app.js?v=3.4"></script>
+  <script src="js/app.js?v=3.5"></script>
 </body>
 </html>
