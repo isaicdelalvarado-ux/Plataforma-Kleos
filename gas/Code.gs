@@ -4149,28 +4149,136 @@ function deleteProgramRowsByKeys(sheet, keysMap) {
 }
 
 /**
- * Normaliza el nombre del ejercicio en bloques con %1RM al catálogo exacto de 'RM_Atenea'.
+ * Normaliza el nombre del ejercicio al catálogo oficial de 'RM_Atenea'
+ * (Back Squat, Front Squat, Peso Muerto, Bench Press, Clean Squat, Power Clean,
+ *  Snatch, Power Snatch, Push Press, Carrera).
  */
-function normalizeRmExerciseForWod(rawEj, pct) {
+function normalizeRmExerciseForWod(rawEj, pct, fallbackText) {
   var ej = String(rawEj || "").trim();
-  if (!pct || Number(pct) <= 0) return ej;
-  var low = ej.toLowerCase();
-  if (low.indexOf("front squat") !== -1) return "Front Squat";
-  if (low.indexOf("back squat") !== -1) return "Back Squat";
-  if (low.indexOf("clean & jerk") !== -1 || low.indexOf("clean and jerk") !== -1) return "Clean & Jerk";
-  if (low.indexOf("squat clean") !== -1 || low.indexOf("clean squat") !== -1 || low.indexOf("clean complex") !== -1 || low.indexOf("hang clean") !== -1 || low.indexOf("power clean") !== -1 || low.indexOf("clean") !== -1) return "Clean Squat";
-  if (low.indexOf("snatch") !== -1) return "Snatch";
-  if (low.indexOf("bench press") !== -1) return "Bench Press";
-  if (low.indexOf("push press") !== -1) return "Push Press";
-  if (low.indexOf("deadlift") !== -1 || low.indexOf("peso muerto") !== -1) return "Deadlift";
-  if (low.indexOf("jerk") !== -1) return "Jerk";
+  var combined = (ej + " " + String(fallbackText || "")).toLowerCase();
+
+  // Mapeo oficial RM_Atenea (prioridad de variantes específicas antes que genéricas)
+  if (combined.indexOf("front squat") !== -1) return "Front Squat";
+  if (combined.indexOf("back squat") !== -1) return "Back Squat";
+  if (combined.indexOf("peso muerto") !== -1 || combined.indexOf("deadlift") !== -1) return "Peso Muerto";
+  if (combined.indexOf("bench press") !== -1 || combined.indexOf("press banca") !== -1) return "Bench Press";
+  if (combined.indexOf("power clean") !== -1) return "Power Clean";
+  if (combined.indexOf("squat clean") !== -1 || combined.indexOf("clean squat") !== -1 || combined.indexOf("clean complex") !== -1 || combined.indexOf("hang clean") !== -1 || combined.indexOf("clean & jerk") !== -1 || combined.indexOf("clean and jerk") !== -1) return "Clean Squat";
+  if (combined.indexOf("power snatch") !== -1) return "Power Snatch";
+  if (combined.indexOf("squat snatch") !== -1 || combined.indexOf("hang snatch") !== -1 || combined.indexOf("snatch") !== -1) return "Snatch";
+  if (combined.indexOf("push press") !== -1 || combined.indexOf("split jerk") !== -1 || combined.indexOf("push jerk") !== -1 || combined.indexOf("jerk") !== -1) return "Push Press";
+  if (combined.indexOf("ciclo de corrida") !== -1 || combined.indexOf("sprint") !== -1 || combined.indexOf("carrera") !== -1 || /\b\d+\s*m\s*(run|sprint)/i.test(combined)) return "Carrera";
+  if (pct && Number(pct) > 0 && combined.indexOf("clean") !== -1) return "Clean Squat";
+
   return ej;
 }
 
 /**
- * Interpreta una programación cruda de WhatsApp usando Gemini 2.5 Flash con JSON estricto.
- * Agrupa exclusivamente por bloques principales (Bloque 1..6), separa 'Atenea' vs 'Atenea_Comp5'
- * si el texto diferencia entre Grupo General y Atletas Comp 5 Dic, y normaliza ejercicios %1RM.
+ * Extrae el primer porcentaje entero válido (ej. @ 78%, al 90-92%, 72% 1RM -> 78, 92, 72).
+ */
+function extractPctIntFromText_(txt) {
+  var s = String(txt || "");
+  // Rango como "90-92%" o "88–90%" -> tomar el techo (ej. 92, 90)
+  var mRange = s.match(/(\d{2,3})\s*[\-–—]\s*(\d{2,3})\s*%/);
+  if (mRange) return parseInt(mRange[2], 10) || 0;
+  var mSingle = s.match(/@?\s*(\d{2,3})\s*%/);
+  if (mSingle) return parseInt(mSingle[1], 10) || 0;
+  return 0;
+}
+
+/**
+ * Parser determinístico por bloques reales (respaldo si Gemini devuelve 503/timeout).
+ * Agrupa EXCLUSIVAMENTE por 'Bloque N:', consolida viñetas en 'notas' separadas por ' | ',
+ * separa Atenea vs Atenea_Comp5 cuando existan variantes diferenciadas y mapea a RM_Atenea.
+ */
+function parseWodStructuredFallback_(rawText, isMultiDay, targetYear) {
+  var lines = String(rawText || "").split(/\r?\n/).map(function(l) { return l.trim(); }).filter(Boolean);
+  var rawBlocks = [];
+  var current = null;
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    var mBloque = line.match(/^Bloque\s*(\d+)\s*[:\.\-–—]\s*(.+)$/i);
+    if (mBloque) {
+      if (current) rawBlocks.push(current);
+      current = {
+        orden: parseInt(mBloque[1], 10) || (rawBlocks.length + 1),
+        bloque: "Bloque " + mBloque[1] + ": " + mBloque[2].trim(),
+        titleRest: mBloque[2].trim(),
+        subLines: []
+      };
+    } else if (current) {
+      current.subLines.push(line.replace(/^[•\-\*]\s*/, "").trim());
+    }
+  }
+  if (current) rawBlocks.push(current);
+
+  if (rawBlocks.length === 0) return null;
+
+  var hasDual = false;
+  var atenea = [];
+  var comp5 = [];
+
+  for (var bIdx = 0; bIdx < rawBlocks.length; bIdx++) {
+    var rb = rawBlocks[bIdx];
+    var genLines = [];
+    var cmpLines = [];
+    var blockHasComp = /comp\s*5\s*dic|\(comp[:\s]/i.test(rb.bloque + " " + rb.subLines.join(" "));
+    if (blockHasComp) hasDual = true;
+
+    for (var sIdx = 0; sIdx < rb.subLines.length; sIdx++) {
+      var sl = rb.subLines[sIdx];
+      var low = sl.toLowerCase();
+      if (/^(atletas\s+comp\s*5\s*dic|comp\s*5\s*dic)\s*:/i.test(low)) {
+        cmpLines.push(sl.replace(/^(atletas\s+comp\s*5\s*dic|comp\s*5\s*dic)\s*:\s*/i, "").trim());
+      } else if (/^grupo\s+general\s*:/i.test(low)) {
+        genLines.push(sl.replace(/^grupo\s+general\s*:\s*/i, "").trim());
+      } else {
+        genLines.push(sl);
+        cmpLines.push(sl);
+      }
+    }
+
+    var genJoined = genLines.join(" | ");
+    var cmpJoined = cmpLines.join(" | ");
+    var pctGen = extractPctIntFromText_(genJoined || rb.titleRest);
+    var pctCmp = extractPctIntFromText_(cmpJoined || rb.titleRest);
+    var ejGen = normalizeRmExerciseForWod(rb.titleRest, pctGen, genJoined);
+    var ejCmp = normalizeRmExerciseForWod(rb.titleRest, pctCmp, cmpJoined);
+
+    atenea.push({
+      bloque: rb.bloque,
+      orden: rb.orden,
+      ejercicio: ejGen,
+      esquema: genLines[0] || rb.titleRest,
+      porcentaje: pctGen,
+      notas: genJoined
+    });
+    comp5.push({
+      bloque: rb.bloque,
+      orden: rb.orden,
+      ejercicio: ejCmp,
+      esquema: cmpLines[0] || rb.titleRest,
+      porcentaje: pctCmp,
+      notas: cmpJoined
+    });
+  }
+
+  return {
+    status: "ok",
+    hasDualPrograms: hasDual,
+    atenea: atenea,
+    atenea_comp5: hasDual ? comp5 : [],
+    usedFallback: true
+  };
+}
+
+/**
+ * Interpreta una programación cruda de WhatsApp o Word (.docx) usando Gemini con JSON estricto.
+ * Reglas estrictas:
+ *  1. Agrupación exclusiva por Bloque real (5-7 bloques por día; viñetas consolidadas en Notas_Coach con ' | ').
+ *  2. Separación automática de programas ('Atenea' vs 'Atenea_Comp5') cuando hay Grupo General vs Atletas Comp 5 Dic.
+ *  3. Mapeo exacto a nombres oficiales de RM_Atenea + entero exacto en Porcentaje_1RM.
  */
 function parseWodWithAI(ss, rawText, isMultiDay, yearHint) {
   var text = String(rawText || "").trim();
@@ -4186,10 +4294,17 @@ function parseWodWithAI(ss, rawText, isMultiDay, yearHint) {
   var targetYear = parseInt(yearHint, 10) || 2026;
   var prompt = "";
 
+  var commonRules =
+    "REGLAS ESTRICTAS E INNEGOCIABLES:\n" +
+    "1. AGRUPACIÓN POR BLOQUE REAL (NO POR LÍNEA): Un día completo de entrenamiento tiene ÚNICAMENTE entre 5 y 7 bloques (crea una fila SOLO cuando el texto indique explícitamente 'Bloque 1:', 'Bloque 2:', 'Bloque 3:', etc.). IGNORA títulos introductorios del día previos a 'Bloque 1:'. TODAS las viñetas ('•', '-'), sub-partes ('Parte A', 'Parte B', 'Parte C', 'Minuto 1', 'Minuto 2', 'Minuto 3', 'HSW', 'Filtro Wellness') y detalles debajo de un 'Bloque X' deben consolidarse DENTRO de esa misma única fila en el campo 'notas' (separadas por ' | '), JAMÁS como filas o bloques nuevos.\n" +
+    "2. SEPARACIÓN AUTOMÁTICA DE PROGRAMAS (Atenea vs Atenea_Comp5): Si dentro de un bloque el texto especifica variantes diferenciadas para 'Grupo General' vs 'Atletas Comp 5 Dic' (o 'Comp:'), genera DOS registros limpios por separado: uno para 'Atenea' (SOLO su esquema, notas y % 1RM general, sin texto de Comp) y otro para 'Atenea_Comp5' (SOLO su esquema, notas y % 1RM competitivo, sin texto de Grupo General). Nunca mezcles ambos programas en la misma celda.\n" +
+    "3. MAPEO EXACTO A RM_Atenea Y Porcentaje_1RM: El campo 'ejercicio' debe mapearse EXCLUSIVAMENTE a uno de los nombres oficiales de RM_Atenea cuando exista un levantamiento o corrida: 'Back Squat', 'Front Squat', 'Peso Muerto', 'Bench Press', 'Clean Squat', 'Power Clean', 'Snatch', 'Power Snatch', 'Push Press', 'Carrera'. El campo 'porcentaje' debe ser el número entero exacto (ej. 78, 72, 92, 90, 80; si hay rango como 90-92% usa el entero 92; si no aplica porcentaje usa 0).\n" +
+    "4. En 'esquema' coloca el resumen conciso de series/reps/formato del bloque (ej. '4 series x 4 reps @ 78% 1RM (Tempo 31X1)') y en 'notas' consolida TODAS las sub-viñetas, partes y notas técnicas del bloque separadas por ' | '.\n";
+
   if (isMultiDay) {
     prompt =
       "Eres el Arquitecto de Programación Deportiva de Plataforma Kleos (CrossFit / Halterofilia).\n" +
-      "Analiza el siguiente documento Word (.docx) que puede contener MÚLTIPLES DÍAS de entrenamiento (ej. LUNES 23/11, MARTES 24/11, etc.) del año " + targetYear + ".\n" +
+      "Analiza el siguiente documento Word (.docx) que puede contener UNO O MÚLTIPLES DÍAS de entrenamiento (ej. LUNES 23/11, JUEVES 26/11, etc.) del año " + targetYear + ".\n" +
       "Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta:\n" +
       "{\n" +
       "  \"isMultiDay\": true,\n" +
@@ -4199,46 +4314,41 @@ function parseWodWithAI(ss, rawText, isMultiDay, yearHint) {
       "      \"programa\": \"Atenea\",\n" +
       "      \"orden\": 1,\n" +
       "      \"bloque\": \"Bloque 1: Título corto\",\n" +
-      "      \"ejercicio\": \"Nombre del ejercicio\",\n" +
-      "      \"esquema\": \"Descripción completa del bloque con sub-viñetas, series y reps\",\n" +
-      "      \"porcentaje\": 0,\n" +
-      "      \"notas\": \"Notas técnicas del coach\"\n" +
+      "      \"ejercicio\": \"Back Squat\",\n" +
+      "      \"esquema\": \"4 series × 4 reps @ 78% 1RM (Tempo 31X1)\",\n" +
+      "      \"porcentaje\": 78,\n" +
+      "      \"notas\": \"Sub-viñeta 1 | Sub-viñeta 2 | Nota técnica\"\n" +
       "    }\n" +
       "  ]\n" +
       "}\n\n" +
-      "REGLAS ESTRICTAS:\n" +
-      "1. Vincula cada bloque a su fecha EXACTA en formato texto YYYY-MM-DD leyendo EXPLÍCITAMENTE el encabezado del día y NUNCA por índice relativo ni saltando días. Ejemplos obligatorios: 'LUNES 23/11' -> '" + targetYear + "-11-23', 'MARTES 24/11' -> '" + targetYear + "-11-24', 'MIÉRCOLES 25/11' -> '" + targetYear + "-11-25', 'JUEVES 26/11' -> '" + targetYear + "-11-26', 'VIERNES 27/11' -> '" + targetYear + "-11-27', 'SÁBADO 28/11' -> '" + targetYear + "-11-28'.\n" +
-      "2. Agrupa ÚNICAMENTE por bloques principales (Bloque 1..6 por día). Conserva todas las sub-viñetas (Parte A/B/C, Pista A/B) dentro de 'esquema'.\n" +
-      "3. Si un día distingue entre 'Grupo General' y 'Atletas Comp 5 Dic', genera filas separadas con programa='Atenea' (solo texto General) y programa='Atenea_Comp5' (solo texto Comp 5 Dic). Si no distingue, usa programa='Atenea'.\n" +
-      "4. En bloques con % de 1RM (@ 75%, @ 72%), extrae el entero en 'porcentaje' y normaliza 'ejercicio' EXACTAMENTE a: Front Squat, Back Squat, Clean Squat, Clean & Jerk, Snatch, Bench Press, Push Press, Deadlift.\n\n" +
+      commonRules +
+      "5. FECHAS EXACTAS: Vincula cada bloque a su fecha EXACTA en texto YYYY-MM-DD leyendo EXPLÍCITAMENTE el encabezado del día y NUNCA por índice relativo ni saltando días. Ejemplos: 'LUNES 23/11' -> '" + targetYear + "-11-23', 'MARTES 24/11' -> '" + targetYear + "-11-24', 'MIÉRCOLES 25/11' -> '" + targetYear + "-11-25', 'JUEVES 26/11' -> '" + targetYear + "-11-26', 'VIERNES 27/11' -> '" + targetYear + "-11-27', 'SÁBADO 28/11' -> '" + targetYear + "-11-28'.\n\n" +
       "DOCUMENTO A PROCESAR:\n" + text;
   } else {
     prompt =
       "Eres el Arquitecto de Programación Deportiva de Plataforma Kleos (CrossFit / Halterofilia).\n" +
-      "Analiza la siguiente sesión de entrenamiento pegada desde WhatsApp y devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta:\n" +
+      "Analiza la siguiente sesión de entrenamiento pegada desde WhatsApp o Word y devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta:\n" +
       "{\n" +
       "  \"hasDualPrograms\": boolean,\n" +
       "  \"atenea\": [\n" +
       "    {\n" +
       "      \"bloque\": \"Bloque 1: Título corto\",\n" +
       "      \"orden\": 1,\n" +
-      "      \"ejercicio\": \"Nombre del ejercicio\",\n" +
-      "      \"esquema\": \"Descripción completa y limpia del bloque con todas sus sub-viñetas, partes A/B/C, pistas, series y repeticiones\",\n" +
-      "      \"porcentaje\": 0,\n" +
-      "      \"notas\": \"Notas técnicas o tiempos clave del coach\"\n" +
+      "      \"ejercicio\": \"Back Squat\",\n" +
+      "      \"esquema\": \"4 series × 4 reps @ 78% 1RM (Tempo 31X1)\",\n" +
+      "      \"porcentaje\": 78,\n" +
+      "      \"notas\": \"Parte A (...) | Parte B (...) | Parte C (...)\"\n" +
       "    }\n" +
       "  ],\n" +
-      "  \"atenea_comp5\": [ ...mismo formato... ]\n" +
+      "  \"atenea_comp5\": [ ...mismo formato exacto (5 a 7 bloques)... ]\n" +
       "}\n\n" +
-      "REGLAS ESTRICTAS:\n" +
-      "1. Agrupa ÚNICAMENTE por los bloques principales (ej. Bloque 1, Bloque 2, Bloque 3, Bloque 4, Bloque 5, Bloque 6). NUNCA dividas sub-viñetas (Parte A/B/C, Pista A/B, pasos 1/2/3) en bloques separados; intégralas limpiamente dentro de 'esquema' y 'notas' de su bloque padre.\n" +
-      "2. Si el texto distingue entre 'Grupo General' y 'Atletas Comp 5 Dic' (o 'Comp 5 Dic'), establece hasDualPrograms: true y genera dos listas completas e independientes: 'atenea' (SOLO las indicaciones del Grupo General y partes comunes, sin mencionar Comp 5 Dic) y 'atenea_comp5' (SOLO las indicaciones de Atletas Comp 5 Dic y partes comunes, sin mencionar Grupo General). Si no hay distinción, pon hasDualPrograms: false y deja 'atenea_comp5' vacío [].\n" +
-      "3. En cualquier bloque que mencione un porcentaje de 1RM (ej. @ 75% 1RM, @ 72% 1RM), extrae el entero en 'porcentaje' (ej. 75, 72) y normaliza 'ejercicio' EXACTAMENTE a uno de estos nombres canónicos de RM_Atenea: Front Squat, Back Squat, Clean Squat, Clean & Jerk, Snatch, Bench Press, Push Press, Deadlift.\n" +
-      "4. Mantén 'orden' secuencial desde 1 hasta N (ej. 1..6).\n\n" +
+      commonRules +
+      "5. Si el texto distingue entre 'Grupo General' y 'Atletas Comp 5 Dic' (o 'Comp:'), establece hasDualPrograms: true y genera dos listas completas e independientes de 5 a 7 bloques cada una: 'atenea' y 'atenea_comp5'. Si no hay distinción, pon hasDualPrograms: false y deja 'atenea_comp5' vacío [].\n" +
+      "6. Mantén 'orden' secuencial desde 1 hasta N (5 a 7 máximo por programa).\n\n" +
       "PROGRAMACIÓN A PROCESAR:\n" + text;
   }
 
-  var modelsToTry = ["gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-flash-latest"];
+  var modelsToTry = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"];
   var payload = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
@@ -4252,19 +4362,34 @@ function parseWodWithAI(ss, rawText, isMultiDay, yearHint) {
     var bodyText = "";
     for (var mIdx = 0; mIdx < modelsToTry.length; mIdx++) {
       var url = "https://generativelanguage.googleapis.com/v1beta/models/" + modelsToTry[mIdx] + ":generateContent?key=" + encodeURIComponent(apiKey);
-      var resp = UrlFetchApp.fetch(url, {
-        method: "post",
-        contentType: "application/json",
-        payload: JSON.stringify(payload),
-        muteHttpExceptions: true
-      });
-      code = resp.getResponseCode();
-      bodyText = resp.getContentText();
+      for (var attempt = 0; attempt < 2; attempt++) {
+        var resp = UrlFetchApp.fetch(url, {
+          method: "post",
+          contentType: "application/json",
+          payload: JSON.stringify(payload),
+          muteHttpExceptions: true
+        });
+        code = resp.getResponseCode();
+        bodyText = resp.getContentText();
+        if (code === 200) break;
+        if (code === 503 && attempt === 0) {
+          Utilities.sleep(1000);
+          continue;
+        }
+        break;
+      }
       if (code === 200) break;
     }
 
     if (code !== 200) {
       logScriptEvent(ss, "PARSE_WOD_AI_ERR", "Coach", 0, "ERROR", "HTTP " + code + " | " + bodyText.substring(0, 300));
+      if (!isMultiDay) {
+        var fb = parseWodStructuredFallback_(text, false, targetYear);
+        if (fb) {
+          logScriptEvent(ss, "PARSE_WOD_FALLBACK_OK", "Coach", 0, "HEALTHY", "Fallback estructurado por bloques: Atenea=" + fb.atenea.length + " | Comp5=" + fb.atenea_comp5.length);
+          return fb;
+        }
+      }
       return { status: "error", message: "Gemini API error HTTP " + code + ": " + bodyText.substring(0, 200) };
     }
 
@@ -4283,8 +4408,8 @@ function parseWodWithAI(ss, rawText, isMultiDay, yearHint) {
 
     if (isMultiDay && Array.isArray(parsed.items)) {
       var multiItems = parsed.items.map(function(b, idx) {
-        var pct = parseInt(b.porcentaje || b.porcentaje1RM || 0, 10) || 0;
-        var ej = normalizeRmExerciseForWod(b.ejercicio || "", pct);
+        var pct = parseInt(b.porcentaje || b.porcentaje1RM || 0, 10) || extractPctIntFromText_((b.esquema || "") + " " + (b.notas || ""));
+        var ej = normalizeRmExerciseForWod(b.ejercicio || "", pct, (b.bloque || "") + " " + (b.esquema || ""));
         var fIso = normalizeDateToISO(b.fecha || "");
         var prog = String(b.programa || "Atenea").trim();
         if (prog.toLowerCase().indexOf("comp") !== -1) prog = "Atenea_Comp5";
@@ -4297,7 +4422,7 @@ function parseWodWithAI(ss, rawText, isMultiDay, yearHint) {
           ejercicio: ej,
           esquema: String(b.esquema || "").trim(),
           porcentaje: pct,
-          notas: String(b.notas || "").trim()
+          notas: String(b.notas || "").replace(/\r?\n+/g, " | ").trim()
         };
       }).filter(function(item) { return item.fecha && (item.bloque || item.esquema); });
 
@@ -4312,15 +4437,15 @@ function parseWodWithAI(ss, rawText, isMultiDay, yearHint) {
     var sanitizeList = function(arr) {
       if (!Array.isArray(arr)) return [];
       return arr.map(function(b, idx) {
-        var pct = parseInt(b.porcentaje || b.porcentaje1RM || 0, 10) || 0;
-        var ej = normalizeRmExerciseForWod(b.ejercicio || "", pct);
+        var pct = parseInt(b.porcentaje || b.porcentaje1RM || 0, 10) || extractPctIntFromText_((b.esquema || "") + " " + (b.notas || ""));
+        var ej = normalizeRmExerciseForWod(b.ejercicio || "", pct, (b.bloque || "") + " " + (b.esquema || ""));
         return {
           bloque: String(b.bloque || ("Bloque " + (idx + 1))).trim(),
           orden: parseInt(b.orden, 10) || (idx + 1),
           ejercicio: ej,
           esquema: String(b.esquema || "").trim(),
           porcentaje: pct,
-          notas: String(b.notas || "").trim()
+          notas: String(b.notas || "").replace(/\r?\n+/g, " | ").trim()
         };
       });
     };
@@ -4339,6 +4464,10 @@ function parseWodWithAI(ss, rawText, isMultiDay, yearHint) {
     };
   } catch (err) {
     logScriptEvent(ss, "PARSE_WOD_AI_ERR", "Coach", 0, "ERROR", err.toString());
+    if (!isMultiDay) {
+      var fbErr = parseWodStructuredFallback_(text, false, targetYear);
+      if (fbErr) return fbErr;
+    }
     return { status: "error", message: "Error procesando con Gemini Flash: " + err.toString() };
   }
 }

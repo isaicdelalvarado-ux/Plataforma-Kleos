@@ -3635,6 +3635,59 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function parseWhatsappWodText(rawText) {
     const lines = String(rawText || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const hasExplicitBlocks = lines.some(l => /^Bloque\s*\d+\s*[:\.\-–—]/i.test(l));
+    const mapRmName = (txt) => {
+      const low = String(txt || '').toLowerCase();
+      if (low.includes('front squat')) return 'Front Squat';
+      if (low.includes('back squat')) return 'Back Squat';
+      if (low.includes('peso muerto') || low.includes('deadlift')) return 'Peso Muerto';
+      if (low.includes('bench press')) return 'Bench Press';
+      if (low.includes('power clean')) return 'Power Clean';
+      if (low.includes('squat clean') || low.includes('clean squat') || low.includes('clean')) return 'Clean Squat';
+      if (low.includes('power snatch')) return 'Power Snatch';
+      if (low.includes('snatch')) return 'Snatch';
+      if (low.includes('push press') || low.includes('jerk')) return 'Push Press';
+      if (low.includes('corrida') || low.includes('sprint') || low.includes('carrera')) return 'Carrera';
+      return '';
+    };
+    const extractPct = (txt) => {
+      const mRange = String(txt || '').match(/(\d{2,3})\s*[\-–—]\s*(\d{2,3})\s*%/);
+      if (mRange) return parseInt(mRange[2], 10) || 0;
+      const m = String(txt || '').match(/@?\s*(\d{2,3})\s*%/);
+      return m ? (parseInt(m[1], 10) || 0) : 0;
+    };
+
+    if (hasExplicitBlocks) {
+      const grouped = [];
+      let cur = null;
+      lines.forEach(line => {
+        const mb = line.match(/^Bloque\s*(\d+)\s*[:\.\-–—]\s*(.+)$/i);
+        if (mb) {
+          if (cur) grouped.push(cur);
+          cur = {
+            bloque: `Bloque ${mb[1]}: ${mb[2].trim()}`,
+            titleRest: mb[2].trim(),
+            subs: []
+          };
+        } else if (cur) {
+          cur.subs.push(line.replace(/^[•\-\*]\s*/, '').trim());
+        }
+      });
+      if (cur) grouped.push(cur);
+      return grouped.map(g => {
+        const joined = g.subs.join(' | ');
+        const pct = extractPct(joined || g.titleRest);
+        const ej = mapRmName(g.titleRest + ' ' + joined) || g.titleRest;
+        return {
+          bloque: g.bloque,
+          ejercicio: ej,
+          esquema: g.subs[0] || g.titleRest,
+          porcentaje: pct,
+          notas: joined
+        };
+      });
+    }
+
     const parsed = [];
     lines.forEach((line, idx) => {
       let bloqueLabel = `Bloque ${idx + 1}`;
@@ -3644,23 +3697,9 @@ document.addEventListener('DOMContentLoaded', () => {
         bloqueLabel = `Bloque ${mPref[1].toUpperCase()}`;
         rest = mPref[2].trim();
       }
-      let pct = 0;
-      const mPct = rest.match(/@?\s*(\d{2,3})\s*%/);
-      if (mPct) pct = parseInt(mPct[1], 10) || 0;
-      let notas = '';
-      const dashParts = rest.split(/\s+-\s+/);
-      if (dashParts.length > 1) {
-        rest = dashParts[0].trim();
-        notas = dashParts.slice(1).join(' - ').trim();
-      }
-      let ejercicio = rest.replace(/@?\s*\d{2,3}\s*%(?:\s*1RM)?/i, '').trim();
-      let esquema = rest;
-      const mSets = ejercicio.match(/^(.*?)\s+(\d+\s*[xX×]\s*\d+.*)$/);
-      if (mSets) {
-        ejercicio = mSets[1].trim();
-        esquema = mSets[2].trim();
-      }
-      parsed.push({ bloque: bloqueLabel, ejercicio: ejercicio || rest, esquema: esquema, porcentaje: pct, notas: notas });
+      const pct = extractPct(rest);
+      const ej = mapRmName(rest) || rest.replace(/@?\s*\d{2,3}\s*%(?:\s*1RM)?/i, '').trim();
+      parsed.push({ bloque: bloqueLabel, ejercicio: ej || rest, esquema: rest, porcentaje: pct, notas: '' });
     });
     return parsed;
   }
