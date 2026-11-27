@@ -3722,17 +3722,20 @@ function getDailyWodData(ss, fechaParam, athleteParam, programParam) {
 
 /**
  * Formatea una celda de duración de Sheets (que puede venir como Date 1899-12-30/31)
- * a formato limpio MM:SS o HH:mm:ss sin exponer cadenas GMT.
+ * a formato limpio MM:SS sin exponer cadenas GMT ni desfase LMT de 1899 (:20s).
  */
 function formatDurationClean(val) {
   if (val === undefined || val === null || val === "") return "";
   if (val instanceof Date) {
-    var hhmmss = Utilities.formatDate(val, "America/Caracas", "HH:mm:ss");
+    // En fechas seriales de duración de Sheets (año 1899/1900), usar la zona horaria del script
+    // y siempre devolver MM:SS limpio (evita el desfase histórico LMT -04:27:40 de 1899 en Caracas)
+    var tz = Session.getScriptTimeZone() || "UTC";
+    var hhmmss = Utilities.formatDate(val, tz, "HH:mm:ss");
     var parts = hhmmss.split(":");
     if (parts.length === 3) {
       if (parts[0] === "00") return parts[1] + ":" + parts[2];
-      if (parts[2] === "00") return parts[0] + ":" + parts[1];
-      return hhmmss;
+      // Sheets guarda "13:19" como 13h 19m -> mostrar siempre "13:19" (MM:SS)
+      return parts[0] + ":" + parts[1];
     }
     return hhmmss;
   }
@@ -3742,9 +3745,13 @@ function formatDurationClean(val) {
     var m = s.match(/(\d{2}):(\d{2}):(\d{2})/);
     if (m) {
       if (m[1] === "00") return m[2] + ":" + m[3];
-      if (m[3] === "00") return m[1] + ":" + m[2];
-      return m[2] + ":" + m[3];
+      return m[1] + ":" + m[2];
     }
+  }
+  // Si viene como HH:MM:SS con segundos de relleno, normalizar a MM:SS
+  var mHms = s.match(/^(\d{1,2}):(\d{2}):(\d{2})$/);
+  if (mHms) {
+    return mHms[1] === "00" ? (mHms[2] + ":" + mHms[3]) : (mHms[1] + ":" + mHms[2]);
   }
   return s;
 }
