@@ -3057,7 +3057,8 @@ document.addEventListener('DOMContentLoaded', () => {
         let weightPillHtml = '';
         if (b.porcentaje1RM > 0) {
           if (b.pesoCalculadoKg > 0) {
-            weightPillHtml = `<span class="hoy-weight-pill">🎯 ${b.porcentaje1RM}% → ${b.pesoCalculadoKg} kg (1RM: ${b.rmReferenciaKg} kg)</span>`;
+            const rmTag = b.rmNota ? ` · ${b.rmNota}` : '';
+            weightPillHtml = `<span class="hoy-weight-pill">🎯 ${b.porcentaje1RM}% → ${b.pesoCalculadoKg} kg (1RM: ${b.rmReferenciaKg} kg${rmTag})</span>`;
           } else {
             weightPillHtml = `<span class="hoy-weight-pill no-rm">⚡ ${b.porcentaje1RM}% 1RM · Sin marca base (usar Epley)</span>`;
           }

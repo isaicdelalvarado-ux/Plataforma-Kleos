@@ -3637,15 +3637,60 @@ function getDailyWodData(ss, fechaParam, athleteParam, programParam) {
 
   matched.sort(function(a, b) { return a.orden - b.orden; });
 
+  // Lookup ESTRICTO por coincidencia exacta de ejercicio (prohibido fallback por substring Power -> Squat)
+  var exactLookupRm = function(rmObj, targetKey) {
+    if (!rmObj || !targetKey) return 0;
+    var tLow = String(targetKey).trim().toLowerCase();
+    for (var k in rmObj) {
+      if (String(k).trim().toLowerCase() === tLow) {
+        var v = parseFloat(rmObj[k]);
+        if (!isNaN(v) && v > 0) return v;
+      }
+    }
+    return 0;
+  };
+
   var enriched = matched.map(function(b) {
     var rmRef = 0;
     var pesoCalc = 0;
+    var rmNota = "";
     if (b.porcentaje > 0 && athleteName) {
-      var mother = getMotherExerciseKey(b.ejercicio) || b.ejercicio;
-      rmRef = parseFloat(athleteRms[b.ejercicio] || athleteRms[mother] || 0) || 0;
+      var normEj = normalizeRmExerciseForWod(b.ejercicio, b.porcentaje, "");
+      var ejLow = normEj.toLowerCase();
+
+      if (ejLow === "power snatch") {
+        // Coincidencia exacta SOLO con Power Snatch; si no existe marca numérica, fallback seguro 80% de Snatch
+        rmRef = exactLookupRm(athleteRms, "Power Snatch");
+        if (rmRef <= 0) {
+          var snatchBase = exactLookupRm(athleteRms, "Snatch");
+          if (snatchBase > 0) {
+            rmRef = Math.round(snatchBase * 0.80 * 10) / 10;
+            rmNota = "Base estimada 80%";
+          }
+        }
+      } else if (ejLow === "power clean") {
+        // Coincidencia exacta SOLO con Power Clean; si no existe marca numérica, fallback seguro 80% de Clean Squat
+        rmRef = exactLookupRm(athleteRms, "Power Clean");
+        if (rmRef <= 0) {
+          var cleanBase = exactLookupRm(athleteRms, "Clean Squat");
+          if (cleanBase > 0) {
+            rmRef = Math.round(cleanBase * 0.80 * 10) / 10;
+            rmNota = "Base estimada 80%";
+          }
+        }
+      } else if (ejLow === "deadlift" || ejLow === "peso muerto") {
+        rmRef = exactLookupRm(athleteRms, "Peso Muerto") || exactLookupRm(athleteRms, "Deadlift");
+      } else {
+        rmRef = exactLookupRm(athleteRms, b.ejercicio) || exactLookupRm(athleteRms, normEj);
+      }
+
       if (rmRef > 0) {
         pesoCalc = roundToNearestPlate((rmRef * b.porcentaje) / 100);
       }
+    }
+    var notasOut = b.notas;
+    if (rmNota && notasOut.indexOf(rmNota) === -1) {
+      notasOut = notasOut ? (notasOut + " | " + rmNota) : rmNota;
     }
     return {
       fecha: b.fecha,
@@ -3659,7 +3704,8 @@ function getDailyWodData(ss, fechaParam, athleteParam, programParam) {
       porcentaje1RM: b.porcentaje,
       rmReferenciaKg: rmRef,
       pesoCalculadoKg: pesoCalc,
-      notas: b.notas
+      rmNota: rmNota,
+      notas: notasOut
     };
   });
 
@@ -4149,24 +4195,26 @@ function deleteProgramRowsByKeys(sheet, keysMap) {
 }
 
 /**
- * Normaliza el nombre del ejercicio al catálogo oficial de 'RM_Atenea'
- * (Back Squat, Front Squat, Peso Muerto, Bench Press, Clean Squat, Power Clean,
- *  Snatch, Power Snatch, Push Press, Carrera).
+ * Normaliza el nombre del ejercicio al catálogo oficial de 'RM_Atenea' sin colapsar Power en Squat:
+ * ['Front Squat', 'Back Squat', 'Clean Squat', 'Power Clean', 'Clean & Jerk', 'Jerk',
+ *  'Snatch', 'Power Snatch', 'Bench Press', 'Push Press', 'Deadlift'] (+ 'Carrera').
  */
 function normalizeRmExerciseForWod(rawEj, pct, fallbackText) {
   var ej = String(rawEj || "").trim();
   var combined = (ej + " " + String(fallbackText || "")).toLowerCase();
 
-  // Mapeo oficial RM_Atenea (prioridad de variantes específicas antes que genéricas)
+  // Mapeo oficial RM_Atenea: NUNCA colapsar Power Snatch -> Snatch ni Power Clean -> Clean Squat
   if (combined.indexOf("front squat") !== -1) return "Front Squat";
   if (combined.indexOf("back squat") !== -1) return "Back Squat";
-  if (combined.indexOf("peso muerto") !== -1 || combined.indexOf("deadlift") !== -1) return "Peso Muerto";
+  if (combined.indexOf("peso muerto") !== -1 || combined.indexOf("deadlift") !== -1) return "Deadlift";
   if (combined.indexOf("bench press") !== -1 || combined.indexOf("press banca") !== -1) return "Bench Press";
-  if (combined.indexOf("power clean") !== -1) return "Power Clean";
-  if (combined.indexOf("squat clean") !== -1 || combined.indexOf("clean squat") !== -1 || combined.indexOf("clean complex") !== -1 || combined.indexOf("hang clean") !== -1 || combined.indexOf("clean & jerk") !== -1 || combined.indexOf("clean and jerk") !== -1) return "Clean Squat";
-  if (combined.indexOf("power snatch") !== -1) return "Power Snatch";
+  if (combined.indexOf("clean & jerk") !== -1 || combined.indexOf("clean and jerk") !== -1) return "Clean & Jerk";
+  if (combined.indexOf("power clean") !== -1 || combined.indexOf("hang power clean") !== -1) return "Power Clean";
+  if (combined.indexOf("squat clean") !== -1 || combined.indexOf("clean squat") !== -1 || combined.indexOf("clean complex") !== -1 || combined.indexOf("hang clean") !== -1) return "Clean Squat";
+  if (combined.indexOf("power snatch") !== -1 || combined.indexOf("hang power snatch") !== -1) return "Power Snatch";
   if (combined.indexOf("squat snatch") !== -1 || combined.indexOf("hang snatch") !== -1 || combined.indexOf("snatch") !== -1) return "Snatch";
-  if (combined.indexOf("push press") !== -1 || combined.indexOf("split jerk") !== -1 || combined.indexOf("push jerk") !== -1 || combined.indexOf("jerk") !== -1) return "Push Press";
+  if (combined.indexOf("push press") !== -1) return "Push Press";
+  if (combined.indexOf("split jerk") !== -1 || combined.indexOf("push jerk") !== -1 || combined.indexOf("jerk") !== -1) return "Jerk";
   if (combined.indexOf("ciclo de corrida") !== -1 || combined.indexOf("sprint") !== -1 || combined.indexOf("carrera") !== -1 || /\b\d+\s*m\s*(run|sprint)/i.test(combined)) return "Carrera";
   if (pct && Number(pct) > 0 && combined.indexOf("clean") !== -1) return "Clean Squat";
 
@@ -4298,7 +4346,12 @@ function parseWodWithAI(ss, rawText, isMultiDay, yearHint) {
     "REGLAS ESTRICTAS E INNEGOCIABLES:\n" +
     "1. AGRUPACIÓN POR BLOQUE REAL (NO POR LÍNEA): Un día completo de entrenamiento tiene ÚNICAMENTE entre 5 y 7 bloques (crea una fila SOLO cuando el texto indique explícitamente 'Bloque 1:', 'Bloque 2:', 'Bloque 3:', etc.). IGNORA títulos introductorios del día previos a 'Bloque 1:'. TODAS las viñetas ('•', '-'), sub-partes ('Parte A', 'Parte B', 'Parte C', 'Minuto 1', 'Minuto 2', 'Minuto 3', 'HSW', 'Filtro Wellness') y detalles debajo de un 'Bloque X' deben consolidarse DENTRO de esa misma única fila en el campo 'notas' (separadas por ' | '), JAMÁS como filas o bloques nuevos.\n" +
     "2. SEPARACIÓN AUTOMÁTICA DE PROGRAMAS (Atenea vs Atenea_Comp5): Si dentro de un bloque el texto especifica variantes diferenciadas para 'Grupo General' vs 'Atletas Comp 5 Dic' (o 'Comp:'), genera DOS registros limpios por separado: uno para 'Atenea' (SOLO su esquema, notas y % 1RM general, sin texto de Comp) y otro para 'Atenea_Comp5' (SOLO su esquema, notas y % 1RM competitivo, sin texto de Grupo General). Nunca mezcles ambos programas en la misma celda.\n" +
-    "3. MAPEO EXACTO A RM_Atenea Y Porcentaje_1RM: El campo 'ejercicio' debe mapearse EXCLUSIVAMENTE a uno de los nombres oficiales de RM_Atenea cuando exista un levantamiento o corrida: 'Back Squat', 'Front Squat', 'Peso Muerto', 'Bench Press', 'Clean Squat', 'Power Clean', 'Snatch', 'Power Snatch', 'Push Press', 'Carrera'. El campo 'porcentaje' debe ser el número entero exacto (ej. 78, 72, 92, 90, 80; si hay rango como 90-92% usa el entero 92; si no aplica porcentaje usa 0).\n" +
+    "3. MAPEO EXACTO A RM_Atenea Y Porcentaje_1RM (SIN COLAPSAR POWER EN SQUAT): El campo 'ejercicio' debe mapearse EXCLUSIVAMENTE al catálogo oficial: ['Front Squat', 'Back Squat', 'Clean Squat', 'Power Clean', 'Clean & Jerk', 'Jerk', 'Snatch', 'Power Snatch', 'Bench Press', 'Push Press', 'Deadlift'] (y 'Carrera' para bloques de corrida). REGLA CRÍTICA POWER vs. SQUAT:\n" +
+    "   - 'Power Snatch' / 'Hang Power Snatch' -> Ejercicio: 'Power Snatch' (NUNCA 'Snatch')\n" +
+    "   - 'Snatch' / 'Squat Snatch' -> Ejercicio: 'Snatch'\n" +
+    "   - 'Power Clean' / 'Hang Power Clean' -> Ejercicio: 'Power Clean' (NUNCA 'Clean Squat')\n" +
+    "   - 'Clean' / 'Squat Clean' -> Ejercicio: 'Clean Squat'\n" +
+    "   El campo 'porcentaje' debe ser el número entero exacto (ej. 78, 74, 72, 92, 90; si hay rango como 90-92% usa 92; si no aplica porcentaje usa 0).\n" +
     "4. En 'esquema' coloca el resumen conciso de series/reps/formato del bloque (ej. '4 series x 4 reps @ 78% 1RM (Tempo 31X1)') y en 'notas' consolida TODAS las sub-viñetas, partes y notas técnicas del bloque separadas por ' | '.\n";
 
   if (isMultiDay) {
